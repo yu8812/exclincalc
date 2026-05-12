@@ -3,6 +3,13 @@
 > 銘傳大學生物醫學工程學系專題研究 · 雙層醫療輔助系統之**醫事端**
 > 民眾端對應專案：[ClinCalc](https://github.com/RO883C/clincalc)
 
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript)
+![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2029-336791?logo=postgresql)
+![TOTP MFA](https://img.shields.io/badge/Auth-TOTP%20MFA-success)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+
 ![Doctor Dashboard](assets/01-doctor-dashboard.png)
 
 🌐 **線上體驗：[exclincalc.ro883c.workers.dev](https://exclincalc.ro883c.workers.dev)**（測試帳號見下方「Demo 帳號」段落）
@@ -75,6 +82,41 @@ ExClinCalc 的設計回應這兩個限制：
 - **Google Gemini 1.5 Flash**（鑑別診斷、藥物交互敘述、SOAP A/P 段輔助）
 - **Cloudflare Workers**（OpenNext for Cloudflare 轉接器，全球邊緣節點）
 - **GitHub Actions**（自動部署、月度參考值同步、Supabase keep-alive）
+
+## 系統架構
+
+```mermaid
+graph TB
+    Doctor([醫師]) --> Auth{Supabase Auth<br/>+ TOTP MFA}
+    Nurse([護理師]) --> Auth
+    Pharmacist([藥師]) --> Auth
+    Admin([管理員]) --> Auth
+
+    Auth -->|JWT + aal2| Middleware[Next.js Middleware<br/>路由保護 /pro/*]
+    Middleware --> Routes[6 角色 RBAC<br/>分流到對應工作台]
+
+    Routes -->|讀寫| RLS[14 張表 × 29 條 RLS Policy<br/>資料庫層權限隔離]
+    RLS --> DB[(PostgreSQL)]
+    RLS -.->|trigger| AuditLog[(audit_logs<br/>稽核軌跡)]
+
+    Routes -->|代理呼叫| GeminiProxy[/api/pro/gemini-clinical<br/>30 req/min/IP]
+    GeminiProxy --> Gemini[Google Gemini 1.5 Flash<br/>SOAP 輔助 / 鑑別診斷]
+
+    Routes -->|靜態規則檢查| DrugDB[(藥物交互<br/>12 組關鍵組合)]
+
+    Edge[Cloudflare Workers<br/>全球邊緣節點] -.- Middleware
+
+    style Auth fill:#fef3c7,stroke:#d97706
+    style RLS fill:#fee2e2,stroke:#dc2626
+    style AuditLog fill:#dcfce7,stroke:#15803d
+    style Gemini fill:#fff4e1,stroke:#d97706
+```
+
+**設計重點**：
+- 🔴 **資料庫層權限**（RLS）── 即使應用層被攻破，攻擊者也只能看到該角色 RLS 允許的資料
+- 🟡 **TOTP 強制 MFA** ── 所有 pro 角色登入必過二階驗證，5 次失敗鎖定 15 分鐘
+- 🟢 **稽核軌跡** ── 所有敏感操作自動寫 audit_logs，保留 90 天
+- 🟠 **AI 為輔** ── Gemini 只生成「醫師可確認的建議」，最終決策仍是醫師按下確認
 
 ## 安全性設計
 
@@ -202,11 +244,58 @@ npm run cf:deploy
 | `sync-references.yml` | 每月 1 日 08:00 | 同步參考值到 `medical_references` |
 | `check-versions.yml` | 每月 1 日 08:30 | 檢查 KDIGO/ADA/ACC-AHA 等指引是否有新版 |
 
+## 程式碼導覽（給審查者）
+
+如果你是研究所教授、招生委員或對特定模組有興趣的工程師，以下是快速導覽：
+
+| 想看什麼 | 看哪個檔 |
+|---|---|
+| 完整 14 張表 + 29 條 RLS policy | [`supabase/complete_setup.sql`](supabase/complete_setup.sql) |
+| TOTP 兩階段強制流程 | [`src/middleware.ts`](src/middleware.ts) + [`src/app/auth/login/page.tsx`](src/app/auth/login/page.tsx) + [`src/app/auth/mfa-verify/page.tsx`](src/app/auth/mfa-verify/page.tsx) |
+| 醫師 SOAP 七步驟 + 20 種主訴模板 | [`src/app/(pro)/pro/encounter/`](src/app/(pro)/pro/encounter/) |
+| 藥物交互即時警示（12 組） | [`src/app/api/pro/drug-interactions/`](src/app/api/pro/drug-interactions/) |
+| Gemini 後端代理（含速率限制 30 req/min/IP） | [`src/app/api/pro/gemini-clinical/`](src/app/api/pro/gemini-clinical/) |
+| 6 角色 RBAC 路由保護 | [`src/middleware.ts`](src/middleware.ts) |
+| 稽核軌跡 trigger 設定 | [`supabase/`](supabase/) 內 audit_logs 相關 SQL |
+| CI/CD（部署 + 月度同步 + keep-alive + 版本檢查） | [`.github/workflows/`](.github/workflows/) |
+
+## 從實作中發現的研究問題
+
+完成 ExClinCalc 後，我整理出三個值得深入研究的方向，作為碩士階段研究計畫的延伸：
+
+1. **多租戶醫療系統的 RLS 設計方法論**
+   我用 29 條 RLS policy 取代應用層權限，但這個設計**沒有系統化的設計方法論**。每次加新表都要思考「policy 怎麼寫」，容易遺漏或不一致。**怎麼從業務需求自動推導出 RLS policy 草稿？怎麼形式化驗證 policy 的完整性？** 這是值得學界研究的問題。
+
+2. **LLM 安全嵌入 SOAP 工作流程的分級架構**
+   ExClinCalc 目前讓 Gemini 輔助 SOAP 的 A（Assessment）、P（Plan）兩段，但**沒有量化評估幻覺率與覆蓋率的取捨**。我的「先規則後 LLM」策略在 KDIGO 分期、藥物交互這類有明確規則的場景運作良好，但在「鑑別診斷」這類本質模糊的場域有限制。**怎麼設計分級的 LLM 介入比例？怎麼量化評估？** 是值得研究的問題。
+
+3. **臨床決策支援工具的真實場域評估方法**
+   ExClinCalc 在功能上完整，但**沒有在真實診所運作過**。學界很多 CDSS 研究停留在「功能完整度評估」，缺少「實際導入評估」。**怎麼設計嚴謹的 CDSS 真實場域評估方法？包含使用者接受度、工作流程影響、警示疲勞量測？** 這是 implementation science 的研究方向。
+
+延伸閱讀：[「為什麼選 RLS 而不是應用層權限」案例研究](https://github.com/RO883C/exclincalc/blob/main/docs/case-study-rls.md)（撰寫中）
+
 ## 學術引用
 
 本專題撰寫於 2026 年 2 月，相關論文：
 
 > 江家寓，《醫療輔助系統的設計與實作——以慢性腎臟病評估為核心案例之雙層健康資訊平台》，銘傳大學生物醫學工程學系專題研究，2026。
+
+## 我是誰
+
+**江家寓 / Chia-Yu Chiang**
+銘傳大學 生物醫學工程學系 · 2026 應屆畢業
+跨領域：電腦通訊工程 → 生物醫學工程
+研究興趣：醫療資訊系統 / 臨床決策支援 / LLM 安全嵌入
+
+🌐 **個人網站**：[jiayuselfweb.pages.dev](https://jiayuselfweb.pages.dev)（含完整 case study、研究探討、Reading List）
+📧 yuyulsc881209@icloud.com
+💻 GitHub：[github.com/RO883C](https://github.com/RO883C)
+
+**Clin- 系列相關專案**：
+- 🌱 民眾端：[ClinCalc](https://github.com/RO883C/clincalc) ── 民眾健康自查與多模態解讀平台
+- ⇄ FHIR 互通：[clinconvert](https://clinconvert.pages.dev/) ── 把 XLS / CSV / JSON 病歷轉成 FHIR R4 標準（對接衛福部 2026 FHIR 政策）
+
+歡迎研究合作、面談請益、或對任何技術細節提問。
 
 ## 授權
 
