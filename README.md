@@ -1,14 +1,17 @@
 # ExClinCalc Pro — AI 驅動醫師臨床決策支援系統
 
-> 銘傳大學生物醫學工程學系專題研究 · 雙層醫療輔助系統之**醫事端**
-> 民眾端對應專案：[ClinCalc](https://github.com/RO883C/clincalc)
+> 銘傳大學生物醫學工程學系專題研究 · **Clin- 醫療生態系**之**醫事端**
+> 同生態系作品：[ClinCalc](https://github.com/RO883C/clincalc)（民眾端）· [clinconvert](https://github.com/88jiayu/clinconvert)（FHIR 互通研究）
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript)
 ![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2029-336791?logo=postgresql)
 ![TOTP MFA](https://img.shields.io/badge/Auth-TOTP%20MFA-success)
+![STRIDE](https://img.shields.io/badge/Security-STRIDE--analyzed-darkred)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
+
+🔒 **完整威脅模型分析**（24 個威脅、6 個 STRIDE 類別、已公開）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
 
 ![Doctor Dashboard](assets/01-doctor-dashboard.png)
 
@@ -291,9 +294,21 @@ npm run cf:deploy
 📧 yuyulsc881209@icloud.com
 💻 GitHub：[github.com/RO883C](https://github.com/RO883C)
 
-**Clin- 系列相關專案**：
-- 🌱 民眾端：[ClinCalc](https://github.com/RO883C/clincalc) ── 民眾健康自查與多模態解讀平台
-- ⇄ FHIR 互通：[clinconvert](https://clinconvert.pages.dev/) ── 把 XLS / CSV / JSON 病歷轉成 FHIR R4 標準（對接衛福部 2026 FHIR 政策）
+## Clin- 生態系
+
+本作品是 **Clin- 系列**之一 ── 4 件作品共用同一套技術主軸
+（Cloudflare Workers + Supabase + PostgreSQL RLS + TypeScript strict）。
+不是各做各的、是**一個生態系**、環環相扣：
+
+| 作品 | 角色 | 對應 |
+|---|---|---|
+| [ClinCalc](https://github.com/RO883C/clincalc) | 民眾端 · 健康自查 + AI 解讀 | 入口：把醫療資料變得**看得懂** |
+| **ExClinCalc**（本作品） | 醫事端 · 診所 CDSS | 流程：醫師 / 護理師 / 藥師完整工作流 |
+| [clinconvert](https://github.com/88jiayu/clinconvert) | 互通研究 · FHIR R4 轉換 POC | 標準化：跨機構資料**可互通** |
+| [Kaizei](https://jiayuselfweb.pages.dev/projects/kaizei) | 跨領域 · Personal Finance OS | 證明同套工程方法**跨領域複用** |
+
+設計理念：**隱私先行（local 端處理）· 規則優於 LLM · 安全在資料庫層**。
+詳見[個人網站](https://jiayuselfweb.pages.dev)。
 
 歡迎研究合作、面談請益、或對任何技術細節提問。
 
