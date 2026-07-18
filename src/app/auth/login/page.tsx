@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LogIn, Eye, EyeOff, AlertCircle, Mail, Lock, Stethoscope } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { safeInternalPath } from "@/lib/safeRedirect";
 
 function LoginForm() {
   const router = useRouter();
@@ -36,7 +37,8 @@ function LoginForm() {
     }
     // 帳密通過後檢查 MFA 狀態
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    const redirect = searchParams.get("redirect") || "/pro/dashboard";
+    // SEC001D-05：redirect 只接受站內路徑
+    const redirect = safeInternalPath(searchParams.get("redirect"), "/pro/dashboard");
 
     // 已綁 TOTP 但尚未通過第二步驗證 → 跳 MFA 驗證頁
     if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {

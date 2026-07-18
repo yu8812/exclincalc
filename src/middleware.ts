@@ -25,6 +25,13 @@ export async function middleware(req: NextRequest) {
     }
   );
 
+  // SEC001D-04：redirect 必須保留 Supabase 刷新的 set-cookie，避免 session/MFA loop。
+  const redirectWith = (url: URL): NextResponse => {
+    const r = NextResponse.redirect(url);
+    res.cookies.getAll().forEach((c) => r.cookies.set(c));
+    return r;
+  };
+
   const { data: { user } } = await supabase.auth.getUser();
   const path = req.nextUrl.pathname;
 
@@ -33,7 +40,7 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/auth/login";
     url.searchParams.set("redirect", path);
-    return NextResponse.redirect(url);
+    return redirectWith(url);
   }
 
   // 檢查 is_pro
@@ -46,29 +53,37 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = "/auth/login";
     url.searchParams.set("error", "unauthorized");
-    return NextResponse.redirect(url);
+    return redirectWith(url);
   }
 
   // /pro/security 是 enroll MFA 的入口，不論 AAL 都允許
   if (path.startsWith("/pro/security")) return res;
 
-  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  const { data: aal, error: aalErr } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  // RR8：尚未 enroll MFA 的 pro user（nextLevel 仍停在 aal1）→ 強制先去綁定，
-  // 不能直接使用一般 Pro 功能（PHI RLS 也要求 aal2，未綁 MFA 會存取不到病歷）。
-  if (aal?.nextLevel === "aal1") {
+  // SEC001D-04：AAL 查詢失敗 / 無法判定 → fail closed（不放行），導回可重試的登入。
+  if (aalErr || !aal) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/auth/login";
+    url.searchParams.set("error", "session_check");
+    url.searchParams.set("redirect", path);
+    return redirectWith(url);
+  }
+
+  // RR8：尚未 enroll MFA 的 pro user（nextLevel 仍停在 aal1）→ 強制先去綁定。
+  if (aal.nextLevel === "aal1") {
     const url = req.nextUrl.clone();
     url.pathname = "/pro/security";
     url.searchParams.set("enroll", "required");
-    return NextResponse.redirect(url);
+    return redirectWith(url);
   }
 
   // 已 enroll 但目前 session 尚未升級到 aal2 → 輸入動態碼
-  if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+  if (aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
     const url = req.nextUrl.clone();
     url.pathname = "/auth/mfa-verify";
     url.searchParams.set("redirect", path);
-    return NextResponse.redirect(url);
+    return redirectWith(url);
   }
 
   return res;

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Shield, AlertCircle, Smartphone, Lock } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { safeInternalPath } from "@/lib/safeRedirect";
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -104,7 +105,8 @@ function MFAForm() {
     }
 
     sessionStorage.removeItem("mfa_attempts");
-    const redirect = searchParams.get("redirect") || "/pro/dashboard";
+    // SEC001D-05：redirect 只接受站內路徑
+    const redirect = safeInternalPath(searchParams.get("redirect"), "/pro/dashboard");
     router.push(redirect);
     router.refresh();
   };
