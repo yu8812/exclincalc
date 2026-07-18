@@ -183,9 +183,12 @@ npm install
 #    supabase/migrations/20260719_01_role_authority.sql          (鎖 profiles 特權欄位)
 #    supabase/migrations/20260719_02_consent_integrity.sql       (consent 欄位/policy/atomic token)
 #    supabase/migrations/20260719_03_phi_aal2_consent_hardening.sql (PHI AAL2 + 拒匿名 + 遞迴修復)
+#    supabase/migrations/20260719_04_global_aal2_phi.sql         (全病歷表 AAL2 + is_pro)
+#          ⚠️ migration 04 套用「前提」：所有 pro 帳號(含 demo)必須先 enroll + challenge MFA(取得 aal2)，
+#             否則 aal1 session 會失去所有病歷存取。請與部署一起做，勿在展示環境即刻套。
 #    supabase/rate_limits.sql                                    (持久化限流表 + RPC)
-#    ⚠️ 不要在已套用 migrations 的環境重跑舊 pro_schema.sql / 舊版 create_patient_consents.sql
-#       的過時版本；legacy 檔已同步為安全定義，但 migrations 才是 source of truth。
+#    ⚠️ pro_schema.sql 與 scripts/run-schema.mjs 已 DEPRECATED（勿執行；會撤銷 migration 04）。
+#       正式 schema 來源 = complete_setup.sql + 上述 migrations。
 
 # 4. 開通管理員角色（將自己的帳號設為 admin）：
 #    UPDATE profiles SET is_pro=true, pro_role='admin' WHERE id='<你的 auth uid>';

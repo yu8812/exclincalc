@@ -1,7 +1,12 @@
 -- ═══════════════════════════════════════════════════════════
--- ClinCalc Pro — 完整資料庫結構
--- 執行順序：health_records.sql → medications.sql → 本檔案
--- 所有語句使用 IF NOT EXISTS / DROP IF EXISTS，可安全重複執行
+-- ⚠️ DEPRECATED / LEGACY（SEC001D-01）
+-- 本檔已被 complete_setup.sql + migrations/* 取代，**請勿再單獨執行**。
+-- run-schema.mjs 已停用。此處 owner policies 已同步為 AAL2 強化版
+-- （參照 complete_setup 定義的 helper），僅為避免萬一被手動重跑時降權；
+-- 正式 schema 來源請以 complete_setup.sql + migrations 為準。
+--
+-- ClinCalc Pro — 完整資料庫結構（legacy）
+-- 所有語句使用 IF NOT EXISTS / DROP IF EXISTS
 -- ═══════════════════════════════════════════════════════════
 
 
@@ -47,7 +52,7 @@ alter table doctor_patients enable row level security;
 
 drop policy if exists "Doctors manage own patients" on doctor_patients;
 create policy "Doctors manage own patients" on doctor_patients
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
 
 -- ───────────────────────────────────────────────────────────
@@ -74,7 +79,7 @@ alter table clinical_records enable row level security;
 
 drop policy if exists "Doctors manage own clinical records" on clinical_records;
 create policy "Doctors manage own clinical records" on clinical_records
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
 
 -- ───────────────────────────────────────────────────────────
@@ -99,7 +104,7 @@ alter table soap_notes enable row level security;
 
 drop policy if exists "Doctors manage own notes" on soap_notes;
 create policy "Doctors manage own notes" on soap_notes
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
 
 -- ───────────────────────────────────────────────────────────
@@ -120,7 +125,7 @@ alter table drug_interaction_checks enable row level security;
 
 drop policy if exists "Doctors manage own interaction logs" on drug_interaction_checks;
 create policy "Doctors manage own interaction logs" on drug_interaction_checks
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
 
 -- ───────────────────────────────────────────────────────────

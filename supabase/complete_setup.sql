@@ -52,10 +52,8 @@ drop policy if exists "Users update own profile" on profiles;
 create policy "Users update own profile" on profiles
   for update using (auth.uid() = id);
 
--- 用 SECURITY DEFINER helper 避免 self-reference 遞迴（RR7）
-drop policy if exists "Admins read all profiles" on profiles;
-create policy "Admins read all profiles" on profiles
-  for select using (public.is_current_admin());
+-- 「Admins read all profiles」policy 移至 helper 定義之後（見 1b 區塊末），
+-- 避免 clean install 時 CREATE POLICY 參照尚未建立的 is_current_admin()（SEC001D-01）。
 
 -- trigger: updated_at
 drop trigger if exists profiles_updated_at on profiles;
@@ -126,6 +124,11 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 revoke execute on function public.is_active_role_aal2(text[]) from public, anon;
 grant execute on function public.is_active_role_aal2(text[]) to authenticated;
+
+-- profiles admin 讀取（helper 已定義，避免遞迴，SEC001D-01：置於 helper 之後）
+drop policy if exists "Admins read all profiles" on public.profiles;
+create policy "Admins read all profiles" on public.profiles
+  for select using (public.is_current_admin());
 
 
 -- ───────────────────────────────────────────────────────────────────
