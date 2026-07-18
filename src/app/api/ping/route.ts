@@ -26,10 +26,11 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
+    // 不對匿名訪客回傳原始錯誤（可能洩漏 schema/RLS/backend 資訊）；詳情只寫 server log。
+    console.error("[ping] supabase check failed:", err instanceof Error ? err.message : String(err));
     return NextResponse.json({
       ok: false,
       supabase: "error",
-      error: err instanceof Error ? err.message : String(err),
       timestamp: new Date().toISOString(),
     }, { status: 503 });
   }

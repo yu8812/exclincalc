@@ -14,6 +14,16 @@
 
 Review 範圍建議：`git diff baccac8 68e90c0`（app + migrations），Unit 4 為 evidence 清單文件。
 
+> **更新 2026-07-19（apply-to-live 進度）**
+> - 兩個 forward migration **已套用到已部署 DB**：
+>   - `20260719_01_role_authority.sql`（R1）— 首次因線上 `profiles` 缺 `avatar_url` 而 42703 失敗；
+>     已改為動態欄位授權（fix commit `7bd2dc4`，補上 clincalc 的 gender/date_of_birth）後**重跑成功**。
+>   - `20260719_02_consent_integrity.sql`（R6/R7/R8）— 套用成功。
+> - **R1 已於 live DB 驗證**：`rls_privilege_columns_test.sql`（修正版 `b06vuyx2a` 系）以一般用戶執行 → **ALL PASS**
+>   （pro_role / is_pro 自我提權皆被擋）。原測試邏輯有假 PASS bug，已修正並重測。
+> - 仍 DEFERRED（Owner=當事人，未做）：Confirm Email / Site URL / 精確 Redirect URLs / password_min_length + direct test / 跨角色·併發整合測試。見 `SEC-001b-auth-operations-evidence.md`。
+> - 另：GPT availability review 指出 `/api/ping` 洩漏 raw err.message → 已修（不對匿名回傳詳情）。
+
 ## 逐條 disposition（R1–R9）
 
 ### R1 — 一般用戶可自我提權 pro_role — **FIXED (code) / DEFERRED (apply-to-live)**
