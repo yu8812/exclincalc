@@ -2,21 +2,42 @@ name: Keep Alive — Ping Supabase
 
 on:
   schedule:
-    # 每 3 天 UTC 08:00 執行（台灣時間 16:00）
-    - cron: "0 8 */3 * *"
+    # 每日 UTC 08:00（台灣 16:00）。改為每日以留更多 margin（免費專案 7 天無活動才暫停）。
+    - cron: "0 8 * * *"
   workflow_dispatch: # 允許手動觸發
+
+# 說明：這是 UptimeRobot（每 5 分鐘）之外的「備援」keep-alive。
+# 兩者並存做冗餘；GitHub 排程 workflow 在 repo 連續 60 天無 activity 時會被自動停用，
+# 因此不可作為唯一 keep-alive，但作為第二層仍有價值。
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping ExClinCalc /api/ping
+      # 第 1 層：打 Worker /api/ping，驗證 Worker → Supabase 的完整依賴鏈（僅資訊，不因此失敗）。
+      - name: Ping Worker /api/ping (dependency chain)
         run: |
-          echo "Pinging https://exclincalc.ro883c.workers.dev/api/ping ..."
-          RESPONSE=$(curl -s -o /tmp/ping.json -w "%{http_code}" https://exclincalc.ro883c.workers.dev/api/ping)
-          cat /tmp/ping.json
-          if [ "$RESPONSE" != "200" ]; then
-            echo "❌ Ping failed with HTTP $RESPONSE"
+          code=$(curl -s -o /tmp/ping.json -w "%{http_code}" \
+            https://exclincalc.ro883c.workers.dev/api/ping || echo 000)
+          echo "worker /api/ping -> $code"
+          cat /tmp/ping.json 2>/dev/null || true
+
+      # 第 2 層（備援）：直接打 Supabase REST，即使 Worker 掛掉也能維持 DB activity + 告警。
+      - name: Direct Supabase REST ping (fallback DB activity)
+        env:
+          SB_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SB_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SB_URL" ] || [ -z "$SB_KEY" ]; then
+            echo "❌ 缺少 NEXT_PUBLIC_SUPABASE_URL / ANON_KEY GitHub secret"
             exit 1
           fi
-          echo "✅ Supabase is online"
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$SB_URL/rest/v1/medical_references?select=id&limit=1" \
+            -H "apikey: $SB_KEY")
+          echo "supabase rest -> $code"
+          if [ "$code" != "200" ]; then
+            echo "❌ Supabase REST 未回 200（可能已暫停/異常）"
+            exit 1
+          fi
+          echo "✅ Supabase online (direct REST)"
