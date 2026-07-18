@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
     password,
     options: {
       data: { name },
-      emailRedirectTo: `${canonicalOrigin()}/auth/callback`,
+      // token_hash 流程用；信件模板以 {{ .RedirectTo }} 帶回此網址（見 /auth/confirm）
+      emailRedirectTo: `${canonicalOrigin()}/auth/confirm`,
     },
   });
 

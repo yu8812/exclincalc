@@ -1,0 +1,75 @@
+<!--
+  Supabase → Authentication → Emails → Templates → "Confirm sign up"
+  把整個模板內容換成下面這段。
+  關鍵：連結用 {{ .RedirectTo }}（不是寫死 .SiteURL），這樣 ClinCalc / ExClinCalc
+  各自的註冊都會回到自己那一邊。兩個 app 的 /auth/confirm 都要在 Redirect URLs 白名單。
+  若點連結顯示驗證失敗，把 type=email 改成 type=signup。
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+       style="background:#f1f5f9;padding:32px 0;font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,'PingFang TC','Microsoft JhengHei',sans-serif;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="480" cellpadding="0" cellspacing="0"
+             style="width:480px;max-width:92%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:linear-gradient(135deg,#0ea5e9,#0369a1);padding:36px 32px 28px;text-align:center;">
+            <div style="display:inline-block;width:56px;height:56px;line-height:56px;border-radius:50%;
+                        background:rgba(255,255,255,0.18);font-size:28px;">✉️</div>
+            <h1 style="margin:16px 0 0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:0.5px;">
+              確認您的電子郵件
+            </h1>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:32px;">
+            <p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.8;">
+              您好，感謝您註冊。請點擊下方按鈕完成信箱驗證，即可啟用您的帳號。
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center" style="padding:8px 0 24px;">
+                  <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email"
+                     style="display:inline-block;background:#0ea5e9;color:#ffffff;text-decoration:none;
+                            font-size:15px;font-weight:700;padding:14px 40px;border-radius:10px;">
+                    確認信箱
+                  </a>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:0 0 8px;color:#94a3b8;font-size:13px;line-height:1.7;">
+              如果按鈕無法點擊，請複製以下連結貼到瀏覽器開啟：
+            </p>
+            <p style="margin:0 0 24px;word-break:break-all;">
+              <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email"
+                 style="color:#0369a1;font-size:12px;">{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email</a>
+            </p>
+
+            <div style="border-top:1px solid #e2e8f0;padding-top:20px;">
+              <p style="margin:0;color:#94a3b8;font-size:12px;line-height:1.7;">
+                若您並未申請此帳號，請忽略這封信，不會有任何變更。<br>
+                此連結有時效，逾期請重新申請。
+              </p>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f8fafc;padding:18px 32px;text-align:center;">
+            <p style="margin:0;color:#cbd5e1;font-size:11px;line-height:1.6;">
+              本信件由系統自動發送，請勿直接回覆。<br>
+              Clin- 醫療資訊系統 · 銘傳大學生物醫學工程學系專題
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
