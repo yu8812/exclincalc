@@ -187,3 +187,41 @@ Implicit confirmation 將 session 資訊放在 URL fragment；fragment 不會送
 6. 提供 staging apply/rollback 紀錄，以及 Confirm Email、exact redirects、password minimum、MFA 的外部設定證據。
 
 在以上 gates 通過前：**R2/R3 可標記 code-level resolved；SEC-001 整體維持 open，R1/R4/R5/R6/R7/R8/R9 不得標記 closed。**
+
+---
+
+## Re-review addendum — 2026-07-19（handoff 更新後再次請求）
+
+再次核對指定範圍：
+
+- `baccac8` 仍解析為 `baccac8b6f1c724ceb89b86b1bef477f2bbdd054`。
+- `68e90c0` 仍解析為 `68e90c0271d13ffea20a28e1b1fcda99720358f7`。
+- `git diff --check baccac8 68e90c0` 仍為 clean。
+- Git commit objects 不可變，因此本文件上述 exact-range findings 與 verdict 不變：**REQUEST_CHANGES**。
+
+FABLE 後續 handoff 新增了 live apply 敘述，另有三個範圍外 commits：
+
+| 範圍外項目 | Re-review disposition |
+|---|---|
+| `7bd2dc4` 動態安全欄位授權 | **OUT OF RANGE**。它也證明 exact range 內的原 migration 因 live schema 缺 `avatar_url` 實際得到 42703，故原 range 的 R1 確實不能標 deployably fixed。 |
+| `699ee53` 修正 R1 SQL test | **OUT OF RANGE**。原 range 內的 test 仍有 catch 自己 FAIL 的 false-positive bug。handoff 記載 live `ALL PASS` 是有價值的營運證據，但不是對原 test implementation 的修正。 |
+| 兩個 migrations 已套用 live | **DEPLOYMENT SUB-GATE UPDATED, DESIGN FINDINGS REMAIN**。R1 的 live self-escalation negative result 可作後續 review 證據；R6–R8 的 ownership invariant、AAL2、function ACL、lifecycle、legacy source-of-truth 等問題不因「SQL 執行成功」而消失。 |
+| `188d4b4` `/api/ping` error redaction | **OUT OF RANGE / unrelated to SEC-001b R1–R9**；方向正確，但不影響本 verdict。 |
+
+### Live DB 現在的特別警示
+
+既然 `20260719_02_consent_integrity.sql` 已套用到 live DB，下列項目應視為目前 production risk，而非只列待辦：
+
+1. consented PHI policy 未要求 JWT AAL2；aal1 clinician session 仍可直接呼叫 Supabase Data API。
+2. `accept_consent` 未明確拒絕 unauthenticated caller，也未在該 migration revoke `PUBLIC/anon` execute。
+3. 在修正 canonical schema 前，**不要對 live DB 再跑** `scripts/run-schema.mjs`／`supabase/pro_schema.sql`／舊 `supabase/create_patient_consents.sql`；它們可能重建全域 PHI policy 或換回舊競態 function。
+
+### 正確的下一個 review range
+
+若目標是審查 FABLE 在 `68e90c0` 後的回應，應另開 review：
+
+```text
+git diff 68e90c0 188d4b4
+```
+
+但這三個後續 commits 目前只處理 R1 migration schema drift、R1 test 與 ping error redaction，沒有修正本 review 的三個主要 release blockers（R4 Auth flow、R7 AAL2、legacy schema 覆寫）。因此現在重審後續 range 也不能關閉 SEC-001b；應先由 FABLE 追加對應 fixes，再交新的 ending SHA。
