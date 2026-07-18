@@ -10,6 +10,13 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isUnauthorized = searchParams.get("error") === "unauthorized";
+  const isVerified = searchParams.get("verified") === "1";
+  const errCode = searchParams.get("error");
+  const errNotice =
+    errCode === "verification_failed" ? "驗證連結無效或已過期，請重新註冊或要求新的驗證信。" :
+    errCode === "invalid_link" ? "驗證連結不完整，請點擊信中完整連結。" :
+    errCode === "missing_code" ? "驗證流程有誤，請重新操作。" :
+    "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -105,6 +112,18 @@ function LoginForm() {
           </div>
         </div>
 
+        {isVerified && !error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.25)", color: "#16a34a", fontSize: 13 }}>
+            <AlertCircle size={14} />
+            信箱已驗證成功。帳號仍需管理員開通醫師權限後才能登入。
+          </div>
+        )}
+        {errNotice && !error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444", fontSize: 13 }}>
+            <AlertCircle size={14} />
+            {errNotice}
+          </div>
+        )}
         {isUnauthorized && !error && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", color: "#ca8a04", fontSize: 13 }}>
             <AlertCircle size={14} />
