@@ -23,11 +23,10 @@ create table if not exists appointments (
 
 alter table appointments enable row level security;
 
+-- RR8：需 is_pro + AAL2（helper 定義於 complete_setup / migrations）
 drop policy if exists "Pro users manage appointments" on appointments;
 create policy "Pro users manage appointments" on appointments
-  for all using (
-    exists (select 1 from profiles where id = auth.uid() and is_pro = true)
-  );
+  for all using (public.is_active_pro_aal2());
 
 -- 自動產生今日流水號
 create or replace function next_queue_number(p_doctor_id uuid, p_date date)
@@ -65,11 +64,10 @@ create table if not exists triage_vitals (
 
 alter table triage_vitals enable row level security;
 
+-- RR8：需 is_pro + AAL2
 drop policy if exists "Pro users manage triage_vitals" on triage_vitals;
 create policy "Pro users manage triage_vitals" on triage_vitals
-  for all using (
-    exists (select 1 from profiles where id = auth.uid() and is_pro = true)
-  );
+  for all using (public.is_active_pro_aal2());
 
 
 -- ── 3. 擴充 clinical_records：結構化處方欄位 ──────────────

@@ -52,15 +52,10 @@ drop policy if exists "Users update own profile" on profiles;
 create policy "Users update own profile" on profiles
   for update using (auth.uid() = id);
 
+-- 用 SECURITY DEFINER helper 避免 self-reference 遞迴（RR7）
 drop policy if exists "Admins read all profiles" on profiles;
 create policy "Admins read all profiles" on profiles
-  for select using (
-    exists (
-      select 1 from profiles p2
-      where p2.id = auth.uid()
-        and p2.pro_role in ('admin', 'super_admin')
-    )
-  );
+  for select using (public.is_current_admin());
 
 -- trigger: updated_at
 drop trigger if exists profiles_updated_at on profiles;
@@ -90,6 +85,47 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
+
+
+-- ───────────────────────────────────────────────────────────────────
+-- 1b. 授權 helper（SECURITY DEFINER，避免 policy 內 self-join profiles 造成遞迴；
+--     與 migrations 03/04 同定義，確保 fresh install 與 migration 產出一致的安全狀態）
+-- ───────────────────────────────────────────────────────────────────
+
+create or replace function public.is_current_admin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.profiles
+                where id = auth.uid() and is_pro = true
+                  and pro_role in ('admin','super_admin'));
+$$;
+revoke execute on function public.is_current_admin() from public, anon;
+grant execute on function public.is_current_admin() to authenticated;
+
+create or replace function public.is_eligible_clinician(p_uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.profiles
+                where id = p_uid and is_pro = true
+                  and pro_role in ('doctor','admin','super_admin'));
+$$;
+revoke execute on function public.is_eligible_clinician(uuid) from public, anon;
+grant execute on function public.is_eligible_clinician(uuid) to authenticated;
+
+create or replace function public.is_active_pro_aal2()
+returns boolean language sql stable security definer set search_path = public as $$
+  select (auth.jwt() ->> 'aal') = 'aal2'
+     and exists(select 1 from public.profiles where id = auth.uid() and is_pro = true);
+$$;
+revoke execute on function public.is_active_pro_aal2() from public, anon;
+grant execute on function public.is_active_pro_aal2() to authenticated;
+
+create or replace function public.is_active_role_aal2(p_roles text[])
+returns boolean language sql stable security definer set search_path = public as $$
+  select (auth.jwt() ->> 'aal') = 'aal2'
+     and exists(select 1 from public.profiles
+                where id = auth.uid() and is_pro = true and pro_role = any(p_roles));
+$$;
+revoke execute on function public.is_active_role_aal2(text[]) from public, anon;
+grant execute on function public.is_active_role_aal2(text[]) to authenticated;
 
 
 -- ───────────────────────────────────────────────────────────────────
@@ -261,21 +297,16 @@ create table if not exists doctor_patients (
 
 alter table doctor_patients enable row level security;
 
--- 醫師管理自己的病患
+-- 醫師管理自己的病患（RR8：需 is_pro + AAL2；停權/未過 MFA 即失去存取）
 drop policy if exists "Doctors manage own patients" on doctor_patients;
 create policy "Doctors manage own patients" on doctor_patients
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
--- 護理師 / 行政 / 管理員可讀取所有病患（護理工作台需要）
+-- 護理師 / 行政 / 管理員可讀取所有病患（護理工作台需要；需 AAL2）
 drop policy if exists "Nurses and admins read all patients" on doctor_patients;
 create policy "Nurses and admins read all patients" on doctor_patients
   for select using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and is_pro = true
-        and pro_role in ('nurse', 'admin', 'super_admin', 'admin_staff')
-    )
+    public.is_active_role_aal2(array['nurse','admin','super_admin','admin_staff'])
   );
 
 -- trigger: updated_at
@@ -312,18 +343,13 @@ alter table clinical_records enable row level security;
 
 drop policy if exists "Doctors manage own clinical records" on clinical_records;
 create policy "Doctors manage own clinical records" on clinical_records
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
--- 護理師可讀取所有臨床記錄（查看病歷）
+-- 護理師可讀取所有臨床記錄（查看病歷；需 AAL2）
 drop policy if exists "Nurses read all clinical records" on clinical_records;
 create policy "Nurses read all clinical records" on clinical_records
   for select using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and is_pro = true
-        and pro_role in ('nurse', 'admin', 'super_admin', 'admin_staff')
-    )
+    public.is_active_role_aal2(array['nurse','admin','super_admin','admin_staff'])
   );
 
 create index if not exists clinical_records_patient_id_idx   on clinical_records(patient_id, visit_date desc);
@@ -355,7 +381,7 @@ alter table soap_notes enable row level security;
 
 drop policy if exists "Doctors manage own notes" on soap_notes;
 create policy "Doctors manage own notes" on soap_notes
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
 drop trigger if exists soap_notes_updated_at on soap_notes;
 create trigger soap_notes_updated_at
@@ -384,18 +410,13 @@ alter table drug_interaction_checks enable row level security;
 
 drop policy if exists "Doctors manage own interaction logs" on drug_interaction_checks;
 create policy "Doctors manage own interaction logs" on drug_interaction_checks
-  for all using (auth.uid() = doctor_id);
+  for all using (auth.uid() = doctor_id and public.is_active_pro_aal2());
 
--- 藥師也可以記錄交互作用查詢
+-- 藥師也可以記錄交互作用查詢（需 AAL2）
 drop policy if exists "Pharmacists manage interaction logs" on drug_interaction_checks;
 create policy "Pharmacists manage interaction logs" on drug_interaction_checks
   for all using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and is_pro = true
-        and pro_role = 'pharmacist'
-    )
+    public.is_active_role_aal2(array['pharmacist','admin','super_admin'])
   );
 
 create index if not exists drug_checks_doctor_id_idx on drug_interaction_checks(doctor_id);
