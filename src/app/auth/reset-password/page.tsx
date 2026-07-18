@@ -30,7 +30,7 @@ export default function ResetPasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirm) { setError("兩次密碼輸入不一致"); return; }
-    if (password.length < 6) { setError("密碼至少需要 6 個字元"); return; }
+    if (password.length < 8) { setError("密碼至少需要 8 個字元"); return; }
     setLoading(true);
     setError("");
     const supabase = createClient();
@@ -77,7 +77,7 @@ export default function ResetPasswordPage() {
                 <div style={{ position: "relative" }}>
                   <Lock size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
                   <input type={showPw ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="至少 6 個字元"
+                    placeholder="至少 8 個字元"
                     style={{ ...inputStyle, paddingRight: 40 }}
                     onFocus={e => (e.target as HTMLInputElement).style.borderColor = "#3b82f6"}
                     onBlur={e => (e.target as HTMLInputElement).style.borderColor = "#1e3a5f"} />

@@ -58,11 +58,12 @@ export default function RegisterPage() {
         </div>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>申請已送出</h2>
         <p style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.7, marginBottom: 8 }}>
-          帳號 <strong style={{ color: "#e2e8f0" }}>{form.email}</strong> 已建立。
+          我們已寄出驗證信到 <strong style={{ color: "#e2e8f0" }}>{form.email}</strong>，
+          請點擊信中連結完成信箱驗證。
         </p>
         <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 8, padding: "12px 16px", marginBottom: 20 }}>
           <p style={{ fontSize: 13, color: "#f59e0b", lineHeight: 1.7, margin: 0 }}>
-            ⚠ 帳號需由管理員開通醫師權限後才能登入系統，請聯繫您的機構管理員。
+            ⚠ 驗證信箱後，帳號仍需由管理員開通醫師權限才能登入系統，請聯繫您的機構管理員。
           </p>
         </div>
         <Link href="/auth/login" style={{

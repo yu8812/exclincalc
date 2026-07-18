@@ -90,7 +90,7 @@ export default function AdminUsersPage() {
 
   const resetPassword = async () => {
     if (!resetModal) return;
-    if (newPassword.length < 6) { setPwError("密碼至少 6 字元"); return; }
+    if (newPassword.length < 8) { setPwError("密碼至少 8 字元"); return; }
     setPwError("");
     setActionLoading(resetModal.userId);
     const res = await fetch("/api/pro/admin/users", {
@@ -435,7 +435,8 @@ export default function AdminUsersPage() {
             }}
           >
             {Object.entries(ROLES)
-              .filter(([key]) => currentRole === "super_admin" ? true : key !== "super_admin")
+              // 非 super_admin 不能指派 admin / super_admin（與後端守衛一致）
+              .filter(([key]) => currentRole === "super_admin" ? true : (key !== "super_admin" && key !== "admin"))
               .map(([key, r]) => (
                 <button
                   key={key}
@@ -466,7 +467,7 @@ export default function AdminUsersPage() {
             <p style={{ fontSize: 12, color: "var(--pro-text-muted)", marginBottom: 16 }}>帳號：{resetModal.email}</p>
             <input
               type="password" className="pro-input"
-              placeholder="輸入新密碼（至少 6 字元）"
+              placeholder="輸入新密碼（至少 8 字元）"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && resetPassword()}

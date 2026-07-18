@@ -92,7 +92,7 @@ export default function ProfilePage() {
   const changePassword = async () => {
     setPwError("");
     setPwOk(false);
-    if (newPw.length < 6) { setPwError("新密碼至少 6 字元"); return; }
+    if (newPw.length < 8) { setPwError("新密碼至少 8 字元"); return; }
     if (newPw !== confirmPw) { setPwError("兩次密碼不一致"); return; }
     setPwLoading(true);
     const supabase = createClient();
@@ -208,7 +208,7 @@ export default function ProfilePage() {
               type={showPw ? "text" : "password"}
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
-              placeholder="新密碼（至少 6 字元）"
+              placeholder="新密碼（至少 8 字元）"
             />
           </div>
           <div>

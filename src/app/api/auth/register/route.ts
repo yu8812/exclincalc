@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function getAdminClient() {
+const MIN_PASSWORD_LENGTH = 8;
+
+// 一般公開註冊：用 anon key 走 supabase.auth.signUp。
+// - Supabase 專案需開啟「Confirm email」，帳號才會處於未驗證狀態並寄出驗證信。
+// - signUp 對「已存在的 email」會回傳混淆結果（不報錯），天然避免帳號枚舉。
+function getAnonClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
 }
 
 // Rate limit: max 5 registrations / IP / hour
+// 註：in-memory Map 在 Cloudflare Workers 多 isolate 下不可靠，A3 會改為持久化。
 const registerRateMap = new Map<string, { count: number; resetAt: number }>();
 function checkRegisterLimit(ip: string): boolean {
   const now = Date.now();
@@ -23,6 +29,8 @@ function checkRegisterLimit(ip: string): boolean {
   return true;
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
   if (!checkRegisterLimit(ip)) {
@@ -31,32 +39,42 @@ export async function POST(req: NextRequest) {
 
   const { email, password, name } = await req.json();
 
-  if (!email || !password || password.length < 8) {
-    return NextResponse.json({ error: "資料不完整" }, { status: 400 });
+  if (!email || !EMAIL_RE.test(email)) {
+    return NextResponse.json({ error: "請輸入有效的電子郵件" }, { status: 400 });
+  }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    return NextResponse.json({ error: `密碼至少需要 ${MIN_PASSWORD_LENGTH} 個字元` }, { status: 400 });
   }
 
-  const admin = getAdminClient();
+  // 驗證信導回位址：優先用請求 origin，其次環境變數
+  const origin =
+    req.headers.get("origin") ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://exclincalc.ro883c.workers.dev";
 
-  // 用 service role 建立帳號，email_confirm: true 跳過驗證信
-  const { data, error } = await admin.auth.admin.createUser({
+  const supabase = getAnonClient();
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    email_confirm: true,
-    user_metadata: { name },
+    options: {
+      data: { name },
+      emailRedirectTo: `${origin}/auth/callback`,
+    },
   });
 
   if (error) {
-    const msg = error.message;
+    const msg = error.message.toLowerCase();
+    // 已註冊：回傳通用成功訊息，避免帳號枚舉
     if (msg.includes("already registered") || msg.includes("already been registered")) {
-      return NextResponse.json({ error: "此電子郵件已被註冊" }, { status: 400 });
+      return NextResponse.json({ ok: true });
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // 密碼強度等驗證錯誤可回饋
+    if (msg.includes("password")) {
+      return NextResponse.json({ error: "密碼不符合安全要求" }, { status: 400 });
+    }
+    return NextResponse.json({ error: "註冊失敗，請稍後再試" }, { status: 500 });
   }
 
-  // 更新 profile 名稱（trigger 已建立基本 profile）
-  if (data.user) {
-    await admin.from("profiles").update({ name }).eq("id", data.user.id);
-  }
-
-  return NextResponse.json({ ok: true });
+  // signUp 對已存在 email 會回傳 user 但 identities 為空陣列 → 同樣視為成功，不洩漏
+  return NextResponse.json({ ok: true, needsVerification: !data.session });
 }

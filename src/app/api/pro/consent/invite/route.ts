@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
 
+// 可發出病患授權邀請的角色（僅醫師與管理員，護理師/行政不可）
+const CONSENT_ROLES = ["doctor", "admin", "super_admin"];
+
 function getAdminClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // 不再 fallback 到 anon key：缺 service key 應明確失敗，而非默默降權執行
+  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
 // POST /api/pro/consent/invite
@@ -22,12 +27,19 @@ export async function POST(req: NextRequest) {
     .eq("id", user.id)
     .single();
 
-  if (!profile?.is_pro) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!profile?.is_pro || !CONSENT_ROLES.includes(profile.pro_role ?? "")) {
+    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const doctorPatientId: string | null = body.doctor_patient_id ?? null;
 
-  const admin = getAdminClient();
+  let admin;
+  try {
+    admin = getAdminClient();
+  } catch {
+    return NextResponse.json({ error: "SERVICE_UNAVAILABLE" }, { status: 503 });
+  }
   const { data, error } = await admin
     .from("patient_consents")
     .insert({ doctor_id: user.id, doctor_patient_id: doctorPatientId })
