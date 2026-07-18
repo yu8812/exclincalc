@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { requirePrivileged } from "@/lib/pro/serverAuth";
 import {
-  checkPrivilegedCaller, authorizeAdminAction, canAssignRole,
-  type CallerContext, type TargetClass, type AdminAction, type ProRole,
+  authorizeAdminAction, canAssignRole,
+  type CallerContext, type TargetClass, type AdminAction,
 } from "@/lib/pro/authz";
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -18,27 +18,6 @@ function getAdminClient() {
 // ── Caller context ──────────────────────────────────────────────────
 // R2：privileged mutation 不可只靠 middleware（middleware 只 match /pro/*，不含 /api/pro/*）。
 // route 內自行取得 user + is_pro + role + 目前 session 的 AAL，交給純函式判斷。
-async function loadCaller(): Promise<{ ctx: CallerContext; email: string } | null> {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles").select("is_pro, pro_role").eq("id", user.id).single();
-
-  const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  const aal = (aalData?.currentLevel as "aal1" | "aal2" | null) ?? null;
-
-  return {
-    ctx: {
-      id: user.id,
-      role: (profile?.pro_role as ProRole) ?? null,
-      isPro: profile?.is_pro === true,
-      aal,
-    },
-    email: user.email ?? "",
-  };
-}
 
 // R3：typed target lookup — error/not_found 一律 fail closed，不用 null 混淆語意。
 async function classifyTarget(
@@ -79,16 +58,7 @@ async function writeAuditLog(params: {
   }
 }
 
-/** 取得已通過 privileged 前置檢查的 caller，否則回傳對應的拒絕 response。 */
-async function requirePrivileged(): Promise<
-  { ok: true; ctx: CallerContext; email: string } | { ok: false; res: NextResponse }
-> {
-  const loaded = await loadCaller();
-  if (!loaded) return { ok: false, res: NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 }) };
-  const pre = checkPrivilegedCaller(loaded.ctx);
-  if (!pre.ok) return { ok: false, res: denyResponse(pre) };
-  return { ok: true, ctx: loaded.ctx, email: loaded.email };
-}
+// requirePrivileged 改用共用的 serverAuth（SEC001D-02：避免重複實作漂移）
 
 // GET — list all users with stats
 export async function GET() {

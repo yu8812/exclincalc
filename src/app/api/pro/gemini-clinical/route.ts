@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { requireProAal2 } from "@/lib/pro/serverAuth";
 
 const CLINICAL_SYSTEM_PROMPT = `You are a clinical decision support assistant for licensed physicians using ClinCalc Pro.
 
@@ -21,22 +21,10 @@ Important guidelines:
 - The clinician is qualified to interpret this information professionally`;
 
 export async function POST(req: NextRequest) {
-  // Pro auth check（保留 user.id 供限流用）
-  let userId: string;
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-    }
-    const { data: profile } = await supabase.from("profiles").select("is_pro").eq("id", user.id).single();
-    if (!profile?.is_pro) {
-      return NextResponse.json({ error: "PRO_REQUIRED" }, { status: 403 });
-    }
-    userId = user.id;
-  } catch {
-    return NextResponse.json({ error: "AUTH_ERROR" }, { status: 500 });
-  }
+  // SEC001D-02：接收 patient context/labs/SOAP 並送第三方 AI → 需 is_pro + AAL2
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
+  const userId = gate.ctx.id;
 
   // 以已驗證的 user.id 限流（取代原本可偽造的 x-forwarded-for），30 req/min，持久化跨 isolate
   if (!(await checkRateLimit(`gemini-clinical:${userId}`, 30, 60))) {

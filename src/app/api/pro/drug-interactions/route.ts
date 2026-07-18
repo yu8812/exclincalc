@@ -3,14 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { checkInteractions } from "@/lib/pro/drugInteractions";
+import { requireProAal2 } from "@/lib/pro/serverAuth";
 
 export async function POST(req: NextRequest) {
-  // Pro auth check
+  // SEC001D-02：需 is_pro + AAL2
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("is_pro").eq("id", user.id).single();
-  if (!profile?.is_pro) return NextResponse.json({ error: "PRO_REQUIRED" }, { status: 403 });
 
   let body: { drugs?: string[]; patientId?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }

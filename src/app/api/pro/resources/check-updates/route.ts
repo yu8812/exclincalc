@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { KNOWN_UPDATES, findUpdate } from "@/lib/pro/resourceUpdates";
+import { requireProAal2, requirePrivileged } from "@/lib/pro/serverAuth";
 
 interface ResourceRow {
   id: string;
@@ -24,13 +25,10 @@ export interface UpdateResult {
 }
 
 export async function GET() {
+  // SEC001D-02：需 is_pro + AAL2
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
   const supabase = await createServerSupabaseClient();
-
-  // Verify Pro access
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("is_pro").eq("id", user.id).single();
-  if (!profile?.is_pro) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // Fetch all resources
   const { data: resources, error } = await supabase
@@ -89,14 +87,10 @@ export async function GET() {
 
 // PATCH: apply an update to a specific resource
 export async function PATCH(req: Request) {
+  // SEC001D-02/RR13：需 admin + 目前 is_pro + AAL2（原本只查 role）
+  const gate = await requirePrivileged();
+  if (!gate.ok) return gate.res;
   const supabase = await createServerSupabaseClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("pro_role").eq("id", user.id).single();
-  if (!["admin", "super_admin"].includes(profile?.pro_role ?? "")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const { resourceId, latestTitle, latestYear, latestUrl, source } = await req.json();
   if (!resourceId) return NextResponse.json({ error: "Missing resourceId" }, { status: 400 });

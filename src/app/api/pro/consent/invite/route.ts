@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
+import { requireProAal2 } from "@/lib/pro/serverAuth";
 
 // 可發出病患授權邀請的角色（僅醫師與管理員，護理師/行政不可）
 const CONSENT_ROLES = ["doctor", "admin", "super_admin"];
@@ -17,17 +18,13 @@ function getAdminClient() {
 // POST /api/pro/consent/invite
 // 醫師呼叫：建立邀請 token，回傳連結
 export async function POST(req: NextRequest) {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC001D-02：consent bearer token 產生需 is_pro + AAL2（不能只靠 middleware）
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
+  const user = { id: gate.ctx.id };
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("is_pro, pro_role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.is_pro || !CONSENT_ROLES.includes(profile.pro_role ?? "")) {
+  // 再套 consent-specific 角色限制（只有醫師/管理員可發邀請）
+  if (!CONSENT_ROLES.includes(gate.ctx.role ?? "")) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -70,14 +67,15 @@ export async function POST(req: NextRequest) {
 
 // GET /api/pro/consent/invite - 取得醫師的所有邀請清單
 export async function GET() {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC001D-02：列出 bearer token / patient 關聯需 is_pro + AAL2
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
 
+  const supabase = await createServerSupabaseClient();
   const { data } = await supabase
     .from("patient_consents")
     .select("id, invite_token, invite_expires_at, status, granted_at, patient_user_id")
-    .eq("doctor_id", user.id)
+    .eq("doctor_id", gate.ctx.id)
     .order("created_at", { ascending: false })
     .limit(50);
 
