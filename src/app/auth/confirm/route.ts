@@ -26,8 +26,17 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
-  if (error) {
+  // signup 確認的 token type 在不同 Supabase 版本可能是 'signup' 或 'email'，
+  // 依序嘗試以求穩健（失敗的 verifyOtp 不會消耗 token）。
+  const candidates = Array.from(
+    new Set([type, "signup", "email"].filter(Boolean))
+  ) as EmailOtpType[];
+  let verified = false;
+  for (const t of candidates) {
+    const { error } = await supabase.auth.verifyOtp({ type: t, token_hash: tokenHash });
+    if (!error) { verified = true; break; }
+  }
+  if (!verified) {
     return NextResponse.redirect(`${origin}/auth/login?error=verification_failed`);
   }
 
