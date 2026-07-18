@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  checkPrivilegedCaller, authorizeAdminAction, canAssignRole,
+  checkPrivilegedCaller, checkProAal2, authorizeAdminAction, canAssignRole,
   type CallerContext, type AdminAction,
 } from "./authz";
 
@@ -73,6 +73,26 @@ describe("authorizeAdminAction (R3 fail-closed + 目標守衛)", () => {
 
   it("admin 可 delete ordinary", () => {
     expect(authorizeAdminAction(caller(), { cls: "ordinary", id: "d" }, "delete").ok).toBe(true);
+  });
+});
+
+describe("checkProAal2 (RR8：任一 pro + is_pro + AAL2)", () => {
+  it("doctor + is_pro + aal2 通過", () => {
+    expect(checkProAal2(caller({ role: "doctor" })).ok).toBe(true);
+  });
+  it("nurse + is_pro + aal2 通過", () => {
+    expect(checkProAal2(caller({ role: "nurse" })).ok).toBe(true);
+  });
+  const denyCases: Array<[string, Partial<CallerContext>, number]> = [
+    ["未登入",        { id: "" },        401],
+    ["非 pro",        { isPro: false },  403],
+    ["aal1（未過 MFA）", { aal: "aal1" }, 403],
+    ["aal null",      { aal: null },     403],
+  ];
+  it.each(denyCases)("拒絕：%s → %i", (_l, over, status) => {
+    const d = checkProAal2(caller(over));
+    expect(d.ok).toBe(false);
+    expect(d.status).toBe(status);
   });
 });
 

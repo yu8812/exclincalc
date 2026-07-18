@@ -74,6 +74,18 @@ export function authorizeAdminAction(
   return ALLOW;
 }
 
+/**
+ * RR8：一般 pro（任一 pro 角色）特權操作前置條件 — 登入 + is_pro + AAL2。
+ * 用於 service-role 讀寫病患資料的 API（analytics、admin data CRUD…），
+ * 不能只靠 middleware（middleware 不保護 /api/pro/*）。
+ */
+export function checkProAal2(c: CallerContext): Decision {
+  if (!c.id) return deny(401, "unauthenticated");
+  if (!c.isPro) return deny(403, "not_pro");
+  if (c.aal !== "aal2") return deny(403, "aal2_required");
+  return ALLOW;
+}
+
 /** 角色指派限制：只有 super_admin 可指派 admin / super_admin。 */
 export function canAssignRole(callerRole: ProRole | null, newRole: string): boolean {
   if (newRole === "super_admin" || newRole === "admin") return callerRole === "super_admin";

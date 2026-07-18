@@ -52,8 +52,18 @@ export async function middleware(req: NextRequest) {
   // /pro/security 是 enroll MFA 的入口，不論 AAL 都允許
   if (path.startsWith("/pro/security")) return res;
 
-  // 檢查 AAL 升級需求
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+  // RR8：尚未 enroll MFA 的 pro user（nextLevel 仍停在 aal1）→ 強制先去綁定，
+  // 不能直接使用一般 Pro 功能（PHI RLS 也要求 aal2，未綁 MFA 會存取不到病歷）。
+  if (aal?.nextLevel === "aal1") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/pro/security";
+    url.searchParams.set("enroll", "required");
+    return NextResponse.redirect(url);
+  }
+
+  // 已 enroll 但目前 session 尚未升級到 aal2 → 輸入動態碼
   if (aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
     const url = req.nextUrl.clone();
     url.pathname = "/auth/mfa-verify";

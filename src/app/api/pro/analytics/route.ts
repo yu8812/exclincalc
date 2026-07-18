@@ -1,19 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireProAal2 } from "@/lib/pro/serverAuth";
 
-export async function GET(req: NextRequest) {
-  // Pro auth check
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const { data: profile } = await supabase.from("profiles").select("is_pro, pro_role").eq("id", user.id).single();
-  if (!profile?.is_pro) return NextResponse.json({ error: "PRO_REQUIRED" }, { status: 403 });
+export async function GET() {
+  // RR8：service-role 跨病患聚合查詢 → 需 is_pro + AAL2（不能只靠 middleware）
+  const gate = await requireProAal2();
+  if (!gate.ok) return gate.res;
 
-  // Use service role key for aggregate queries (bypass RLS)
-  const serviceUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const admin = createClient(serviceUrl, serviceKey);
+  // service role 聚合查詢（繞過 RLS）；缺 key 明確 503，不 fallback 到 anon
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) return NextResponse.json({ error: "SERVICE_UNAVAILABLE" }, { status: 503 });
+  const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
   try {
     const [

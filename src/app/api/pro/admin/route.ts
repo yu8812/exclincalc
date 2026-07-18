@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { createClient } from "@supabase/supabase-js";
+import { requirePrivileged } from "@/lib/pro/serverAuth";
 
 const ALLOWED_TABLES = ["medications", "medical_references"] as const;
 type AllowedTable = typeof ALLOWED_TABLES[number];
@@ -12,19 +12,16 @@ async function getAdminClient() {
   return createClient(url, key);
 }
 
+// RR8：admin data CRUD 需 admin/super_admin + is_pro + AAL2（共用 server 守衛）。
 async function verifyAdmin() {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data: profile } = await supabase.from("profiles").select("is_pro, pro_role").eq("id", user.id).single();
-  if (!profile?.is_pro) return null;
-  return { user, isAdmin: ["admin", "super_admin"].includes(profile.pro_role ?? "") };
+  const gate = await requirePrivileged();
+  return gate.ok ? gate.ctx : null;
 }
 
 // POST: insert new row (or upsert if upsert: true)
 export async function POST(req: NextRequest) {
   const auth = await verifyAdmin();
-  if (!auth?.isAdmin) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   let body: { table: string; row: Record<string, unknown>; upsert?: boolean };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }
@@ -54,7 +51,7 @@ export async function POST(req: NextRequest) {
 // PUT: update existing row by id
 export async function PUT(req: NextRequest) {
   const auth = await verifyAdmin();
-  if (!auth?.isAdmin) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   let body: { table: string; row: Record<string, unknown> };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }
@@ -78,7 +75,7 @@ export async function PUT(req: NextRequest) {
 // DELETE: delete row by id
 export async function DELETE(req: NextRequest) {
   const auth = await verifyAdmin();
-  if (!auth?.isAdmin) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   let body: { table: string; id: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }
