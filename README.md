@@ -82,7 +82,7 @@ ExClinCalc 的設計回應這兩個限制：
 - **Next.js 16** App Router + React 19 + TypeScript
 - **Tailwind CSS v4**（Pro 深藍色系 design tokens）
 - **Supabase**（PostgreSQL + Auth + RLS + TOTP MFA）
-- **Google Gemini 1.5 Flash**（鑑別診斷、藥物交互敘述、SOAP A/P 段輔助）
+- **Google Gemini 2.5 Flash**（鑑別診斷、藥物交互敘述、SOAP A/P 段輔助）
 - **Cloudflare Workers**（OpenNext for Cloudflare 轉接器，全球邊緣節點）
 - **GitHub Actions**（自動部署、月度參考值同步、Supabase keep-alive）
 
@@ -103,7 +103,7 @@ graph TB
     RLS -.->|trigger| AuditLog[(audit_logs<br/>稽核軌跡)]
 
     Routes -->|代理呼叫| GeminiProxy[/api/pro/gemini-clinical<br/>30 req/min/IP]
-    GeminiProxy --> Gemini[Google Gemini 1.5 Flash<br/>SOAP 輔助 / 鑑別診斷]
+    GeminiProxy --> Gemini[Google Gemini 2.5 Flash<br/>SOAP 輔助 / 鑑別診斷]
 
     Routes -->|靜態規則檢查| DrugDB[(藥物交互<br/>12 組關鍵組合)]
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -14,26 +15,12 @@ function getAnonClient() {
   );
 }
 
-// Rate limit: max 5 registrations / IP / hour
-// 註：in-memory Map 在 Cloudflare Workers 多 isolate 下不可靠，A3 會改為持久化。
-const registerRateMap = new Map<string, { count: number; resetAt: number }>();
-function checkRegisterLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = registerRateMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    registerRateMap.set(ip, { count: 1, resetAt: now + 3_600_000 });
-    return true;
-  }
-  if (entry.count >= 5) return false;
-  entry.count++;
-  return true;
-}
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: NextRequest) {
+  // 持久化限流：每 IP 每小時最多 5 次註冊（跨 isolate 有效）
   const ip = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "unknown";
-  if (!checkRegisterLimit(ip)) {
+  if (!(await checkRateLimit(`register:${ip}`, 5, 3600))) {
     return NextResponse.json({ error: "註冊次數過多，請 1 小時後再試" }, { status: 429 });
   }
 

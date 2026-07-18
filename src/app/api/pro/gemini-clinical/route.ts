@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 const CLINICAL_SYSTEM_PROMPT = `You are a clinical decision support assistant for licensed physicians using ClinCalc Pro.
 
@@ -19,22 +20,9 @@ Important guidelines:
 - Note drug-drug interactions or contraindications if patient medications are provided
 - The clinician is qualified to interpret this information professionally`;
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  if (entry.count >= 30) return false;
-  entry.count++;
-  return true;
-}
-
 export async function POST(req: NextRequest) {
-  // Pro auth check
+  // Pro auth check（保留 user.id 供限流用）
+  let userId: string;
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -45,12 +33,13 @@ export async function POST(req: NextRequest) {
     if (!profile?.is_pro) {
       return NextResponse.json({ error: "PRO_REQUIRED" }, { status: 403 });
     }
+    userId = user.id;
   } catch {
     return NextResponse.json({ error: "AUTH_ERROR" }, { status: 500 });
   }
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
-  if (!checkRateLimit(ip)) {
+  // 以已驗證的 user.id 限流（取代原本可偽造的 x-forwarded-for），30 req/min，持久化跨 isolate
+  if (!(await checkRateLimit(`gemini-clinical:${userId}`, 30, 60))) {
     return NextResponse.json({ error: "RATE_LIMIT", message: "請求過於頻繁" }, { status: 429 });
   }
 
