@@ -73,36 +73,35 @@ GRANT EXECUTE ON FUNCTION get_consent_by_token TO anon, authenticated;
 
 -- ── RPC：病患同意授權 ───────────────────────────────────────
 
+-- atomic 單次接受 + 拒絕匿名（SEC-001b R8 / GPT RR5）：
+-- 單一 conditional UPDATE ... RETURNING 防競態；auth.uid() 為 null 直接拒絕；
+-- 並從 PUBLIC/anon 收回 execute（Postgres function 預設 PUBLIC 可執行）。
 CREATE OR REPLACE FUNCTION accept_consent(p_token text)
 RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  v_consent_id uuid;
+  v_id uuid;
 BEGIN
-  -- 確認 token 有效且未被接受
-  SELECT id INTO v_consent_id
-  FROM patient_consents
-  WHERE invite_token = p_token
-    AND status = 'pending'
-    AND invite_expires_at > now()
-    AND patient_user_id IS NULL;
-
-  IF NOT FOUND THEN
-    RETURN false;
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'authentication required';
   END IF;
 
-  -- 寫入病患 ID
   UPDATE patient_consents
-  SET patient_user_id = auth.uid(),
-      status = 'active',
-      granted_at = now()
-  WHERE id = v_consent_id;
+     SET patient_user_id = auth.uid(),
+         status = 'active',
+         granted_at = now()
+   WHERE invite_token = p_token
+     AND status = 'pending'
+     AND invite_expires_at > now()
+     AND patient_user_id IS NULL
+  RETURNING id INTO v_id;
 
-  RETURN true;
+  RETURN v_id IS NOT NULL;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION accept_consent TO authenticated;
+REVOKE EXECUTE ON FUNCTION accept_consent(text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION accept_consent(text) TO authenticated;
 
 -- ── RPC：撤銷授權（醫師或病患皆可） ─────────────────────────
 
@@ -155,14 +154,21 @@ GRANT EXECUTE ON FUNCTION get_my_consents TO authenticated;
 -- ── health_records RLS：允許有授權的醫師讀取 ─────────────────
 -- 注意：若 health_records 已有其他 policy，新增此條即可
 
+-- 要求 AAL2 + 醫師目前仍有資格（SEC-001b R7 / GPT RR2）。
+-- aal1 clinician session 不得直接以 Data API 讀 PHI。
+DROP POLICY IF EXISTS "consented_doctor_read_records" ON health_records;
 CREATE POLICY "consented_doctor_read_records"
   ON health_records FOR SELECT
   USING (
-    EXISTS (
+    (auth.jwt() ->> 'aal') = 'aal2'
+    AND EXISTS (
       SELECT 1 FROM patient_consents pc
+      JOIN profiles p ON p.id = pc.doctor_id
       WHERE pc.doctor_id = auth.uid()
         AND pc.patient_user_id = health_records.user_id
         AND pc.status = 'active'
+        AND p.is_pro = true
+        AND p.pro_role IN ('doctor', 'admin', 'super_admin')
     )
   );
 

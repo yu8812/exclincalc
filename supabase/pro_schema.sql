@@ -151,15 +151,13 @@ create policy "Pro admins write medical_references" on medical_references
     )
   );
 
--- Pro 用戶可讀取所有健康記錄（分析用）
+-- ⚠️ 已移除「Pro 用戶可讀取所有健康記錄」的過寬 policy（SEC-001b R7 / GPT RR3）。
+-- 這條會讓任何 is_pro 用戶讀取全部病患 PHI，且 permissive policy 會 OR 疊加、
+-- 使 consent policy 形同虛設。PHI 讀取權限一律改由
+--   supabase/migrations/20260719_02_consent_integrity.sql（consent-scoped）
+--   supabase/migrations/20260719_03_phi_aal2_consent_hardening.sql（+ AAL2 + eligibility）
+-- 定義。admin 分析請走 service role（繞過 RLS）而非過寬 RLS policy。
 drop policy if exists "Pro doctors read all health_records" on health_records;
-create policy "Pro doctors read all health_records" on health_records
-  for select using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid() and is_pro = true
-    )
-  );
 
 
 -- ───────────────────────────────────────────────────────────

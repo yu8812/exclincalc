@@ -178,6 +178,14 @@ npm install
 #    supabase/seed_resources.sql       (選用：醫療參考資源)
 #    supabase/seed_50_patients.sql     (選用：50 名模擬病患)
 #    supabase/seed_today_workload.sql  (選用：今日掛號/SOAP/處方資料)
+#
+# 3b. ★ 安全 migrations（必跑，依序）— 讓 fresh install 與正式環境得到相同的安全狀態：
+#    supabase/migrations/20260719_01_role_authority.sql          (鎖 profiles 特權欄位)
+#    supabase/migrations/20260719_02_consent_integrity.sql       (consent 欄位/policy/atomic token)
+#    supabase/migrations/20260719_03_phi_aal2_consent_hardening.sql (PHI AAL2 + 拒匿名 + 遞迴修復)
+#    supabase/rate_limits.sql                                    (持久化限流表 + RPC)
+#    ⚠️ 不要在已套用 migrations 的環境重跑舊 pro_schema.sql / 舊版 create_patient_consents.sql
+#       的過時版本；legacy 檔已同步為安全定義，但 migrations 才是 source of truth。
 
 # 4. 開通管理員角色（將自己的帳號設為 admin）：
 #    UPDATE profiles SET is_pro=true, pro_role='admin' WHERE id='<你的 auth uid>';
