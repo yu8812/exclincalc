@@ -23,6 +23,13 @@
       - 8 字元 → 成功
       證據：兩次 API 呼叫的 request/response（可用 curl 或 REST）。
 
+- [ ] **Confirm signup email template 指向 /auth/confirm（R4 前提）**
+      位置：Authentication → Email Templates → Confirm signup
+      連結改為：`{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
+      原因：SEC-001c 把 email 確認改成 token_hash + verifyOtp（跨裝置安全），
+      不再依賴 client flowType；模板沒改的話驗證信仍走舊流程、可能壞掉。
+      驗證：新 email 註冊 → 點信 → 落到 `/auth/login?verified=1`（或 pro 帳號 → dashboard）。
+
 - [ ] **MFA / TOTP enrollment 設定**符合預期（所有 pro 角色強制）
       對應 R2：AAL2 現由後端 API 強制檢查（見 authz.checkPrivilegedCaller），
       但 Dashboard 的 MFA 開關仍需確認為啟用。

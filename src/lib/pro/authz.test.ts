@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   checkPrivilegedCaller, authorizeAdminAction, canAssignRole,
-  type CallerContext, type TargetClass, type AdminAction,
+  type CallerContext, type AdminAction,
 } from "./authz";
 
 const caller = (over: Partial<CallerContext> = {}): CallerContext => ({

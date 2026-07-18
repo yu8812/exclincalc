@@ -23,16 +23,20 @@ do $$
 declare
   v_uid uuid := '42bdd433-3123-40be-b19c-f5189706da72';
   v_blocked boolean;
+  v_role_before text;
+  v_role_after text;
 begin
-  -- 測試 1：自我提權 pro_role → 應被擋
+  select pro_role into v_role_before from public.profiles where id = v_uid;
+
+  -- 測試 1：自我提權 pro_role → 應被擋（error 或 0 rows 都算被擋，之後再 reload 確認）
   v_blocked := false;
   begin
     update public.profiles set pro_role = 'super_admin' where id = v_uid;
   exception when others then
-    v_blocked := true;   -- 有 error = 被擋，符合預期
+    v_blocked := true;
   end;
   if not v_blocked then
-    raise exception 'SECURITY FAIL: pro_role 自我提權未被擋（可提權成 super_admin）';
+    raise exception 'SECURITY FAIL: pro_role 自我提權未被 error 擋下';
   end if;
 
   -- 測試 2：自我開通 is_pro → 應被擋
@@ -44,6 +48,19 @@ begin
   end;
   if not v_blocked then
     raise exception 'SECURITY FAIL: is_pro 自我開通未被擋';
+  end if;
+
+  -- 正向對照：安全欄位 name 應可更新（證明不是全面拒絕、測試 setup 正確）
+  begin
+    update public.profiles set name = 'RLS positive control' where id = v_uid;
+  exception when others then
+    raise exception 'SETUP ERROR: 連安全欄位 name 都不能更新，測試環境有問題（非安全結論）';
+  end;
+
+  -- Reload 確認：pro_role 沒有被改動
+  select pro_role into v_role_after from public.profiles where id = v_uid;
+  if v_role_after is distinct from v_role_before then
+    raise exception 'SECURITY FAIL: reload 後 pro_role 竟被改變 (% -> %)', v_role_before, v_role_after;
   end if;
 end $$;
 
