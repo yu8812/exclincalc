@@ -15,10 +15,34 @@
 -- ═══════════════════════════════════════════════════════════════════
 
 -- 1) 欄位級權限 ------------------------------------------------------
+-- 撤銷整表 UPDATE，只重新授權「安全欄位」。改為動態授權：只 grant 實際存在的欄位，
+-- 避免 schema drift（例如某些部署缺 avatar_url）導致 42703 column does not exist。
+-- 清單需涵蓋兩個 app 客戶端會更新的欄位：
+--   exclincalc: name / institution / license_number / settings
+--   clincalc:   name / gender / date_of_birth
+-- （is_pro / pro_role 刻意排除 → 只能由 service_role 變更）
 revoke update on public.profiles from authenticated;
 revoke update on public.profiles from anon;
-grant update (name, avatar_url, institution, license_number, settings, email)
-  on public.profiles to authenticated;
+
+do $$
+declare
+  safe_cols text[] := array[
+    'name','avatar_url','institution','license_number','settings',
+    'email','phone','gender','date_of_birth'
+  ];
+  cols text;
+begin
+  select string_agg(quote_ident(column_name), ', ')
+    into cols
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name   = 'profiles'
+    and column_name  = any(safe_cols);
+
+  if cols is not null then
+    execute format('grant update (%s) on public.profiles to authenticated', cols);
+  end if;
+end $$;
 
 -- 2) 防禦縱深 trigger ------------------------------------------------
 create or replace function enforce_profile_privilege_columns()
