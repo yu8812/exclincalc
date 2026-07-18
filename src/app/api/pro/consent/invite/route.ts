@@ -40,6 +40,20 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "SERVICE_UNAVAILABLE" }, { status: 503 });
   }
+
+  // R6：若指定 doctor_patient_id，必須先驗證該病歷屬於這位醫師，
+  // 不可信任 client 傳來的 ID 就用 service role 直接寫入（否則可污染他人 chart↔account 關聯）。
+  if (doctorPatientId) {
+    const { data: owned, error: ownErr } = await admin
+      .from("doctor_patients")
+      .select("id")
+      .eq("id", doctorPatientId)
+      .eq("doctor_id", user.id)
+      .maybeSingle();
+    if (ownErr) return NextResponse.json({ error: "OWNERSHIP_CHECK_FAILED" }, { status: 503 });
+    if (!owned) return NextResponse.json({ error: "FORBIDDEN_PATIENT" }, { status: 403 });
+  }
+
   const { data, error } = await admin
     .from("patient_consents")
     .insert({ doctor_id: user.id, doctor_patient_id: doctorPatientId })
