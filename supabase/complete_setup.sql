@@ -355,6 +355,41 @@ create policy "Nurses read all clinical records" on clinical_records
     public.is_active_role_aal2(array['nurse','admin','super_admin','admin_staff'])
   );
 
+-- 角色矩陣：藥師可讀（調配看處方）+ 只能改調配欄（trigger 擋改醫囑）
+drop policy if exists "Pharmacists read clinical records" on clinical_records;
+create policy "Pharmacists read clinical records" on clinical_records
+  for select using (public.is_active_role_aal2(array['pharmacist']));
+drop policy if exists "Pharmacists dispense clinical records" on clinical_records;
+create policy "Pharmacists dispense clinical records" on clinical_records
+  for update using (public.is_active_role_aal2(array['pharmacist']))
+             with check (public.is_active_role_aal2(array['pharmacist']));
+
+create or replace function public.enforce_pharmacist_dispense_only()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.doctor_id <> auth.uid()
+     and exists (select 1 from public.profiles where id = auth.uid() and is_pro = true and pro_role = 'pharmacist')
+  then
+    if new.chief_complaint is distinct from old.chief_complaint
+       or new.subjective is distinct from old.subjective
+       or new.objective is distinct from old.objective
+       or new.assessment is distinct from old.assessment
+       or new.plan is distinct from old.plan
+       or new.prescriptions is distinct from old.prescriptions
+       or new.icd10_codes is distinct from old.icd10_codes
+       or new.diagnosis_accuracy is distinct from old.diagnosis_accuracy
+    then
+      raise exception 'pharmacist may only update dispensing fields (dispensed_at/dispensed_by)';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists clinical_records_pharmacist_guard on clinical_records;
+create trigger clinical_records_pharmacist_guard
+  before update on clinical_records
+  for each row execute function public.enforce_pharmacist_dispense_only();
+
 create index if not exists clinical_records_patient_id_idx   on clinical_records(patient_id, visit_date desc);
 create index if not exists clinical_records_doctor_id_idx    on clinical_records(doctor_id);
 create index if not exists clinical_records_visit_date_idx   on clinical_records(visit_date desc);

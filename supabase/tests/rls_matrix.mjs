@@ -223,6 +223,38 @@ async function main() {
   try { await c.query(`insert into public.patient_consents (doctor_id, patient_user_id, status, granted_at) values ($1,$2,'active',now())`, [doctor, dupPatient]); dupOk = true; } catch { dupOk = false; }
   check("RR11：同一 doctor/patient 第二筆 active consent 被唯一索引擋下", !dupOk);
 
+  // ── 角色能力矩陣（SEC001D-03 診所模式）────────────────────────────────
+  check("藥師 aal2 可讀 clinical_records（調配看處方）",
+    await canSelect(c, pharm, "aal2", "select 1 from public.clinical_records where id=$1", [cr[0].id]));
+  check("藥師 aal2 可改調配欄 dispensed_at",
+    await canWrite(c, pharm, "aal2", "update public.clinical_records set dispensed_at=now() where id=$1", [cr[0].id]));
+  check("藥師 aal2 不可竄改醫囑 assessment（trigger 擋）",
+    !(await canWrite(c, pharm, "aal2", "update public.clinical_records set assessment='hacked' where id=$1", [cr[0].id])));
+  check("藥師 aal2 不可管理 appointments（角色排除）",
+    !(await canWrite(c, pharm, "aal2", "insert into public.appointments (doctor_id) values ($1)", [doctor])));
+  check("nurse aal2 可寫 triage_vitals",
+    await canWrite(c, nurse, "aal2", "insert into public.triage_vitals (patient_id, nurse_id) values ($1,$2)", [patientId, nurse]));
+  check("doctor aal2 可讀 triage_vitals",
+    await (async () => {
+      await c.query(`insert into public.triage_vitals (patient_id, nurse_id) values ($1,$2)`, [patientId, nurse]);
+      return canSelect(c, doctor, "aal2", "select 1 from public.triage_vitals where patient_id=$1", [patientId]);
+    })());
+  check("藥師 aal2 不可寫 triage_vitals（角色排除）",
+    !(await canWrite(c, pharm, "aal2", "insert into public.triage_vitals (patient_id, nurse_id) values ($1,$2)", [patientId, pharm])));
+
+  // ── replay-safety（RR12）：重跑 base 檔後，安全狀態不得還原 ────────────
+  await applyAll(c, [
+    "supabase/complete_setup.sql",
+    "supabase/clinic_flow.sql",
+    "supabase/create_patient_consents.sql",
+  ]);
+  check("replay 後 doctor aal1 仍不可讀病患（AAL2 gate 未被還原）",
+    !(await canSelect(c, doctor, "aal1", "select 1 from public.doctor_patients where id=$1", [patientId])));
+  check("replay 後 藥師仍不可管理 appointments（角色範圍未被還原）",
+    !(await canWrite(c, pharm, "aal2", "insert into public.appointments (doctor_id) values ($1)", [doctor])));
+  check("replay 後 一般用戶仍不可自我提權（R1 未被還原）",
+    !(await canWrite(c, plain, "aal2", "update public.profiles set pro_role='super_admin' where id=$1", [plain])));
+
   console.log("\n" + results.join("\n"));
   console.log(`\n${pass} passed, ${fail} failed`);
   await c.end();

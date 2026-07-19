@@ -23,10 +23,10 @@ create table if not exists appointments (
 
 alter table appointments enable row level security;
 
--- RR8：需 is_pro + AAL2（helper 定義於 complete_setup / migrations）
+-- RR8 + 角色矩陣：掛號由 doctor/nurse/admin_staff/admin 管（排除藥師），需 AAL2
 drop policy if exists "Pro users manage appointments" on appointments;
 create policy "Pro users manage appointments" on appointments
-  for all using (public.is_active_pro_aal2());
+  for all using (public.is_active_role_aal2(array['doctor','nurse','admin_staff','admin','super_admin']));
 
 -- 自動產生今日流水號
 create or replace function next_queue_number(p_doctor_id uuid, p_date date)
@@ -64,10 +64,14 @@ create table if not exists triage_vitals (
 
 alter table triage_vitals enable row level security;
 
--- RR8：需 is_pro + AAL2
+-- RR8 + 角色矩陣：護理可寫、醫師只讀（排除藥師/行政寫），需 AAL2
 drop policy if exists "Pro users manage triage_vitals" on triage_vitals;
-create policy "Pro users manage triage_vitals" on triage_vitals
-  for all using (public.is_active_pro_aal2());
+drop policy if exists "Nurses manage triage_vitals" on triage_vitals;
+create policy "Nurses manage triage_vitals" on triage_vitals
+  for all using (public.is_active_role_aal2(array['nurse','admin','super_admin']));
+drop policy if exists "Doctors read triage_vitals" on triage_vitals;
+create policy "Doctors read triage_vitals" on triage_vitals
+  for select using (public.is_active_role_aal2(array['doctor']));
 
 
 -- ── 3. 擴充 clinical_records：結構化處方欄位 ──────────────

@@ -18,6 +18,7 @@ export const SCHEMA_FILES = [
   "supabase/migrations/20260719_04_global_aal2_phi.sql",
   "supabase/migrations/20260719_05_restrictive_aal2_gate.sql",
   "supabase/migrations/20260719_06_consent_deletion_lifecycle.sql",
+  "supabase/migrations/20260719_07_role_capability_matrix.sql",
   "supabase/rate_limits.sql",
 ];
 
