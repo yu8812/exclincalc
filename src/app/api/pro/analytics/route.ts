@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireProAal2 } from "@/lib/pro/serverAuth";
+import { requirePrivileged } from "@/lib/pro/serverAuth";
 
 export async function GET() {
-  // RR8：service-role 跨病患聚合查詢 → 需 is_pro + AAL2（不能只靠 middleware）
-  const gate = await requireProAal2();
+  // SEC001D-03（決策：限 admin）：analytics 是平台級跨病患/跨醫師聚合(監督用)，
+  // UI 也只在 admin 區顯示 → 用 requirePrivileged（admin/super_admin + is_pro + AAL2）。
+  const gate = await requirePrivileged();
   if (!gate.ok) return gate.res;
 
   // service role 聚合查詢（繞過 RLS）；缺 key 明確 503，不 fallback 到 anon

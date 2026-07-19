@@ -78,9 +78,19 @@ export default function SecurityPage() {
   };
 
   const unenroll = async (id: string) => {
+    // SEC001D-04：醫事帳號強制 MFA，禁止移除唯一的 verified factor
+    // （要更換請先新增另一個再移除；遺失可由管理員 reset）。
+    const target = factors.find(f => f.id === id);
+    const verifiedCount = factors.filter(f => f.status === "verified").length;
+    if (target?.status === "verified" && verifiedCount <= 1) {
+      setError("醫事帳號強制雙重驗證，無法移除唯一的驗證方式。請先新增另一個驗證方式後再移除。");
+      return;
+    }
     if (!confirm("確定要停用此雙重驗證方式嗎？")) return;
     const { error } = await supabase.auth.mfa.unenroll({ factorId: id });
     if (error) { setError(error.message); return; }
+    // 立即刷新 session 使 aal 由 aal2 降為 aal1（否則 JWT 要等 refresh 才降級，暫時保有 PHI 存取）
+    await supabase.auth.refreshSession();
     setSuccess("已停用雙重驗證");
     loadFactors();
   };

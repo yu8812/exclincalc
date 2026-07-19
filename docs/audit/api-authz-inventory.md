@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | `/api/pro/admin/users` | GET/POST/PATCH/DELETE | 帳號/角色/MFA 管理 | requirePrivileged + target guard | ✅ |
 | `/api/pro/admin` (data CRUD) | POST/PUT/DELETE | medications/references 寫入 | requirePrivileged | ✅ |
-| `/api/pro/analytics` | GET | 跨病患聚合(service role) | requireProAal2 ⚠️見下 | ✅(AAL2) |
+| `/api/pro/analytics` | GET | 跨病患聚合(service role) | **requirePrivileged**(決策:限 admin) | ✅ |
 | `/api/pro/consent/invite` | POST/GET | 病患授權 bearer token | requireProAal2 + CONSENT_ROLES + ownership | ✅ |
 | `/api/pro/gemini-clinical` | POST | patient context→第三方 AI | requireProAal2 + rate limit | ✅ |
 | `/api/pro/drug-interactions` | POST | 處方分析→第三方 AI | requireProAal2 | ✅ |
@@ -17,8 +17,10 @@
 | `/api/ping` | GET | 健康檢查(公開) | 無(僅唯讀 public 表) | ✅ 設計如此 |
 | `/api/auth/register` | POST | 公開註冊 | 無(rate limit + signUp) | ✅ 設計如此 |
 
-## 待決 / 下一輪（GPT SEC001D-03）
-- **analytics 用 requireProAal2（任一 pro）但 UI 只在 admin 顯示**：GPT 認為應改 requirePrivileged
-  或明確更新權限模型 + 縮減回傳資料。**決策題**：analytics 要限 admin 還是開放全 pro？
-  → 目前先加 AAL2 擋住 aal1；role 範圍待產品決策後收斂。
-- consent-specific ownership / role policy 的 DB invariant（RR11）仍 open。
+## 決策紀錄（SEC001D-03）
+- **analytics = admin only（requirePrivileged）** — 當事人 2026-07-19 裁決：平台級監督資料，
+  且 UI 本就只在 admin 區顯示，依最小權限限 admin。
+
+## 下一輪（需測試 DB）
+- 改成 Supabase 建議的 `AS RESTRICTIVE` per-table AAL2 gate + 完整角色 CRUD matrix（SEC001D-03 深層）。
+- consent-specific ownership / role policy 的 DB invariant（RR11）。
