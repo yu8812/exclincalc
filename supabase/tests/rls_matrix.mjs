@@ -173,6 +173,37 @@ async function main() {
   });
   check("anon 不可執行 accept_consent（已 revoke public/anon，RR5）", anonOk === false);
 
+  // ── restrictive gate 抗繞過（SEC001D-03）──────────────────────────
+  await c.query(`create policy "rogue_open" on public.doctor_patients as permissive for select to authenticated using (true)`);
+  check("加了無 aal2 的 rogue permissive policy 後，doctor aal1 仍被 restrictive gate 擋（不可繞過）",
+    !(await canSelect(c, doctor, "aal1", "select 1 from public.doctor_patients where id=$1", [patientId])));
+  check("restrictive gate 下 doctor aal2 仍可讀（正常不受影響）",
+    await canSelect(c, doctor, "aal2", "select 1 from public.doctor_patients where id=$1", [patientId]));
+  await c.query(`drop policy "rogue_open" on public.doctor_patients`);
+
+  // ── 真並發：兩連線搶同一 token，只有一個成功（R8 atomic single-use）──────
+  const { rows: tk } = await c.query(
+    `insert into public.patient_consents (doctor_id, status) values ($1,'pending') returning invite_token`, [doctor]);
+  const raceToken = tk[0].invite_token;
+  const rc1 = await seedUser(c, "race1@test.local", false, null);
+  const rc2 = await seedUser(c, "race2@test.local", false, null);
+  const A = new pg.Client(DB_URL), B = new pg.Client(DB_URL);
+  await A.connect(); await B.connect();
+  const beginAs = async (cl, uid) => {
+    await cl.query("begin");
+    await cl.query("set local role authenticated");
+    await cl.query("select set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: uid, role: "authenticated", aal: "aal1" })]);
+  };
+  await beginAs(A, rc1); await beginAs(B, rc2);
+  const rA = await A.query("select public.accept_consent($1) as ok", [raceToken]); // A 取得 row lock
+  const pB = B.query("select public.accept_consent($1) as ok", [raceToken]);       // B 卡在 lock
+  await A.query("commit");                                                          // 釋放 lock
+  const rB = await pB;                                                              // B 續行：status 已 active → 0 row
+  await B.query("commit");
+  await A.end(); await B.end();
+  check("並發：先到的連線成功接受 token", rA.rows[0].ok === true);
+  check("並發：後到的連線失敗（atomic single-use，不會重複接受）", rB.rows[0].ok === false);
+
   console.log("\n" + results.join("\n"));
   console.log(`\n${pass} passed, ${fail} failed`);
   await c.end();
