@@ -32,12 +32,14 @@ CREATE INDEX IF NOT EXISTS idx_consents_patient ON patient_consents (patient_use
 
 ALTER TABLE patient_consents ENABLE ROW LEVEL SECURITY;
 
--- 醫師可看自己發出的所有邀請
+-- 醫師可看自己發出的所有邀請（DROP IF EXISTS 以確保 replay-safe，SEC001D-12）
+DROP POLICY IF EXISTS "doctor_view_own_consents" ON patient_consents;
 CREATE POLICY "doctor_view_own_consents"
   ON patient_consents FOR SELECT
   USING (doctor_id = auth.uid());
 
 -- 病患可看自己已授權的記錄
+DROP POLICY IF EXISTS "patient_view_own_consents" ON patient_consents;
 CREATE POLICY "patient_view_own_consents"
   ON patient_consents FOR SELECT
   USING (patient_user_id = auth.uid());
