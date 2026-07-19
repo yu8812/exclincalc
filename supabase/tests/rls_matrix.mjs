@@ -204,6 +204,25 @@ async function main() {
   check("並發：先到的連線成功接受 token", rA.rows[0].ok === true);
   check("並發：後到的連線失敗（atomic single-use，不會重複接受）", rB.rows[0].ok === false);
 
+  // ── RR10：刪除有 active consent 的病患應成功、consent 轉 revoked ────────
+  const delPatient = await seedUser(c, "delp@test.local", false, null);
+  const { rows: dc } = await c.query(
+    `insert into public.patient_consents (doctor_id, patient_user_id, status, granted_at)
+     values ($1,$2,'active',now()) returning id`, [doctor, delPatient]);
+  let delOk = false;
+  try { await c.query("delete from auth.users where id=$1", [delPatient]); delOk = true; } catch { delOk = false; }
+  check("RR10：刪除有 active consent 的病患成功（不再撞 constraint）", delOk);
+  const { rows: after } = await c.query("select status, patient_user_id from public.patient_consents where id=$1", [dc[0].id]);
+  check("RR10：該 consent 轉為 revoked 並保留記錄（audit）",
+    after.length === 1 && after[0].status === "revoked" && after[0].patient_user_id === null);
+
+  // ── RR11：同一 doctor/patient 不可有兩筆 active consent ────────────────
+  const dupPatient = await seedUser(c, "dup@test.local", false, null);
+  await c.query(`insert into public.patient_consents (doctor_id, patient_user_id, status, granted_at) values ($1,$2,'active',now())`, [doctor, dupPatient]);
+  let dupOk = false;
+  try { await c.query(`insert into public.patient_consents (doctor_id, patient_user_id, status, granted_at) values ($1,$2,'active',now())`, [doctor, dupPatient]); dupOk = true; } catch { dupOk = false; }
+  check("RR11：同一 doctor/patient 第二筆 active consent 被唯一索引擋下", !dupOk);
+
   console.log("\n" + results.join("\n"));
   console.log(`\n${pass} passed, ${fail} failed`);
   await c.end();
