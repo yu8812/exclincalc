@@ -1,21 +1,22 @@
 .pro-root {
-  --pro-bg:          #07111f;
-  --pro-sidebar:     #0a1628;
+  /* 重設計：臨床藍青(取代舊的深藍+亮藍漸層)，對齊 design_handoff globals.css 的 Pro dark palette */
+  --pro-bg:          #0a1114;
+  --pro-sidebar:     #0d181c;
   --pro-sidebar-w:   240px;
-  --pro-card:        #0f1e35;
-  --pro-card-hover:  #152640;
-  --pro-border:      #1e3a5f;
-  --pro-accent:      #3b82f6;
-  --pro-accent-dim:  rgba(59, 130, 246, 0.12);
-  --pro-accent-hover:#60a5fa;
-  --pro-success:     #10b981;
-  --pro-success-dim: rgba(16, 185, 129, 0.12);
-  --pro-warning:     #f59e0b;
-  --pro-warning-dim: rgba(245, 158, 11, 0.12);
-  --pro-danger:      #ef4444;
-  --pro-danger-dim:  rgba(239, 68, 68, 0.12);
-  --pro-text:        #e2e8f0;
-  --pro-text-muted:  #94a3b8;
+  --pro-card:        #101a1e;
+  --pro-card-hover:  #162228;
+  --pro-border:      #223038;
+  --pro-accent:      #2f9fbe;
+  --pro-accent-dim:  rgba(47, 159, 190, 0.14);
+  --pro-accent-hover:#4db4d1;
+  --pro-success:     #46bf74;
+  --pro-success-dim: rgba(70, 191, 116, 0.14);
+  --pro-warning:     #e9a23b;
+  --pro-warning-dim: rgba(233, 162, 59, 0.14);
+  --pro-danger:      #e25c5c;
+  --pro-danger-dim:  rgba(226, 92, 92, 0.14);
+  --pro-text:        #e3ecf0;
+  --pro-text-muted:  #99aeb9;
   --pro-topbar-h:    56px;
 
   display: flex;
