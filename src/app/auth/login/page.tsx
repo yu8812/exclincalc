@@ -73,7 +73,7 @@ function LoginForm() {
             <input
               className="input-field" type="email" required value={email}
               onChange={e => setEmail(e.target.value)} placeholder="doctor@hospital.com"
-              style={{ paddingLeft: 36 }}
+              style={{ paddingLeft: 36 }} suppressHydrationWarning
             />
           </div>
         </div>
@@ -86,7 +86,7 @@ function LoginForm() {
             <input
               className="input-field" type={showPw ? "text" : "password"} required value={password}
               onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-              style={{ paddingLeft: 36, paddingRight: 40 }}
+              style={{ paddingLeft: 36, paddingRight: 40 }} suppressHydrationWarning
             />
             <button type="button" onClick={() => setShowPw(!showPw)}
               style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex" }}>
