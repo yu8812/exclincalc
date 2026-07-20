@@ -116,11 +116,11 @@ function MFAForm() {
     : 0;
 
   return (
-    <div style={{ background: "#0f1e35", border: "1px solid #1e3a5f", borderRadius: 14, padding: 28 }}>
+    <div className="card" style={{ padding: 28 }}>
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <Smartphone size={36} color="#3b82f6" style={{ margin: "0 auto 8px", display: "block" }} />
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", marginBottom: 4 }}>雙重驗證</h2>
-        <p style={{ fontSize: 13, color: "#94a3b8" }}>
+        <Smartphone size={34} color="var(--brand)" style={{ margin: "0 auto 8px", display: "block" }} />
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>雙重驗證</h2>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
           請開啟驗證器 App 輸入當前的 6 位數動態碼
         </p>
       </div>
@@ -132,29 +132,21 @@ function MFAForm() {
           onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
           placeholder="000000"
           disabled={!!lockedUntil}
+          className="input-field"
           style={{
-            width: "100%", textAlign: "center", letterSpacing: "0.4em", fontSize: 22,
-            background: "#07111f", border: "1px solid #1e3a5f", borderRadius: 8,
-            padding: "14px 12px", color: "#e2e8f0", outline: "none", marginBottom: 12,
+            textAlign: "center", letterSpacing: "0.4em", fontSize: 22,
+            padding: "14px 12px", marginBottom: 12,
           }}
         />
 
         {error && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
-            borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)",
-            color: "#ef4444", fontSize: 13, marginBottom: 12,
-          }}>
+          <div className="alert alert-danger" style={{ marginBottom: 12 }}>
             <AlertCircle size={14} /> {error}
           </div>
         )}
 
         {lockedUntil && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
-            borderRadius: 8, background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.3)",
-            color: "#ca8a04", fontSize: 13, marginBottom: 12,
-          }}>
+          <div className="alert alert-warning" style={{ marginBottom: 12 }}>
             <Lock size={14} /> 帳號鎖定中，剩餘約 {lockoutRemaining} 分鐘
           </div>
         )}
@@ -162,17 +154,13 @@ function MFAForm() {
         <button
           type="submit"
           disabled={verifying || !!lockedUntil || code.length !== 6}
-          style={{
-            width: "100%", padding: "11px", borderRadius: 8, border: "none",
-            background: code.length === 6 && !lockedUntil ? "linear-gradient(135deg,#3b82f6,#1d4ed8)" : "#374151",
-            color: "#fff", fontWeight: 700, fontSize: 14,
-            cursor: code.length === 6 && !lockedUntil ? "pointer" : "not-allowed",
-          }}>
+          className="btn btn-primary"
+          style={{ width: "100%" }}>
           {verifying ? "驗證中…" : "驗證"}
         </button>
       </form>
 
-      <p style={{ textAlign: "center", fontSize: 11, color: "#475569", marginTop: 14 }}>
+      <p style={{ textAlign: "center", fontSize: 11, color: "var(--text-tertiary)", marginTop: 14 }}>
         遺失驗證器？請聯繫系統管理員協助重置
       </p>
     </div>
@@ -181,22 +169,22 @@ function MFAForm() {
 
 export default function MFAVerifyPage() {
   return (
-    <div style={{ minHeight: "100vh", background: "#07111f", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{
             width: 56, height: 56, borderRadius: 16, margin: "0 auto 14px",
-            background: "linear-gradient(135deg,#3b82f6,#1d4ed8)",
+            background: "var(--brand-soft)", border: "1px solid var(--brand-soft-border)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Shield size={24} color="#fff" />
+            <Shield size={24} color="var(--brand)" strokeWidth={2.2} />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0", marginBottom: 4 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>
             ClinCalc Pro
           </h1>
-          <p style={{ fontSize: 13, color: "#94a3b8" }}>多重驗證確認 · 第二步</p>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>多重驗證確認 · 第二步</p>
         </div>
-        <Suspense fallback={<div style={{ background: "#0f1e35", borderRadius: 14, padding: 28, color: "#94a3b8", textAlign: "center" }}>載入中…</div>}>
+        <Suspense fallback={<div className="card" style={{ padding: 28, color: "var(--text-tertiary)", textAlign: "center" }}>載入中…</div>}>
           <MFAForm />
         </Suspense>
       </div>

@@ -44,69 +44,58 @@ export default function ResetPasswordPage() {
     }
   };
 
-  const inputStyle = {
-    width: "100%", background: "#07111f", border: "1px solid #1e3a5f",
-    borderRadius: 8, padding: "10px 12px 10px 36px",
-    color: "#e2e8f0", fontSize: 14, outline: "none",
-  };
+  const iconStyle = { position: "absolute" as const, left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-tertiary)" };
+  const confirmMismatch = !!confirm && confirm !== password;
 
   if (!ready) return null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#07111f", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
+    <div style={{ minHeight: "100vh", background: "var(--bg-base)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 16px" }}>
       <div style={{ width: "100%", maxWidth: 380 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, margin: "0 auto 14px", background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Stethoscope size={24} color="#fff" />
+          <div style={{ width: 56, height: 56, borderRadius: 16, margin: "0 auto 14px", background: "var(--brand-soft)", border: "1px solid var(--brand-soft-border)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Stethoscope size={24} color="var(--brand)" strokeWidth={2.2} />
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#e2e8f0", marginBottom: 4 }}>設定新密碼</h1>
-          <p style={{ fontSize: 13, color: "#94a3b8" }}>請輸入您的新密碼</p>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", marginBottom: 4 }}>設定新密碼</h1>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>請輸入您的新密碼</p>
         </div>
 
-        <div style={{ background: "#0f1e35", border: "1px solid #1e3a5f", borderRadius: 14, padding: "32px 28px" }}>
+        <div className="card" style={{ padding: "32px 28px" }}>
           {done ? (
             <div style={{ textAlign: "center" }}>
-              <CheckCircle2 size={48} color="#22c55e" style={{ margin: "0 auto 16px", display: "block" }} />
-              <p style={{ fontSize: 15, fontWeight: 700, color: "#e2e8f0", marginBottom: 8 }}>密碼已更新</p>
-              <p style={{ fontSize: 13, color: "#94a3b8" }}>即將跳轉至儀表板...</p>
+              <CheckCircle2 size={46} color="var(--success)" style={{ margin: "0 auto 16px", display: "block" }} />
+              <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>密碼已更新</p>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>即將跳轉至儀表板...</p>
             </div>
           ) : (
             <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", display: "block", marginBottom: 6 }}>新密碼</label>
+                <label className="field-label">新密碼</label>
                 <div style={{ position: "relative" }}>
-                  <Lock size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
-                  <input type={showPw ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="至少 8 個字元"
-                    style={{ ...inputStyle, paddingRight: 40 }}
-                    onFocus={e => (e.target as HTMLInputElement).style.borderColor = "#3b82f6"}
-                    onBlur={e => (e.target as HTMLInputElement).style.borderColor = "#1e3a5f"} />
+                  <Lock size={15} style={iconStyle} />
+                  <input className="input-field" type={showPw ? "text" : "password"} required value={password} onChange={e => setPassword(e.target.value)}
+                    placeholder="至少 8 個字元" style={{ paddingLeft: 36, paddingRight: 40 }} />
                   <button type="button" onClick={() => setShowPw(!showPw)}
-                    style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}>
+                    style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-tertiary)", display: "flex" }}>
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", display: "block", marginBottom: 6 }}>確認新密碼</label>
+                <label className="field-label">確認新密碼</label>
                 <div style={{ position: "relative" }}>
-                  <Lock size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
-                  <input type={showPw ? "text" : "password"} required value={confirm} onChange={e => setConfirm(e.target.value)}
-                    placeholder="再次輸入新密碼"
-                    style={inputStyle}
-                    onFocus={e => (e.target as HTMLInputElement).style.borderColor = "#3b82f6"}
-                    onBlur={e => (e.target as HTMLInputElement).style.borderColor = "#1e3a5f"} />
+                  <Lock size={15} style={iconStyle} />
+                  <input className={`input-field${confirmMismatch ? " input-error" : ""}`} type={showPw ? "text" : "password"} required value={confirm} onChange={e => setConfirm(e.target.value)}
+                    placeholder="再次輸入新密碼" style={{ paddingLeft: 36 }} />
                 </div>
               </div>
 
               {error && (
-                <div style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#ef4444", fontSize: 13 }}>
-                  {error}
-                </div>
+                <div className="alert alert-danger">{error}</div>
               )}
 
-              <button type="submit" disabled={loading} style={{ background: loading ? "#1d4ed8" : "linear-gradient(135deg, #3b82f6, #1d4ed8)", color: "#fff", fontWeight: 700, padding: 11, borderRadius: 8, border: "none", cursor: loading ? "default" : "pointer", fontSize: 14, opacity: loading ? 0.8 : 1 }}>
+              <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: "100%" }}>
                 {loading ? "更新中..." : "更新密碼"}
               </button>
             </form>
