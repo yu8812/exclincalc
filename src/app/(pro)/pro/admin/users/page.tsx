@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Users, Shield, ShieldOff, Trash2, KeyRound,
-  CheckCircle, RefreshCw, ChevronDown, ChevronRight, Smartphone,
+  CheckCircle, RefreshCw, ChevronDown, ChevronRight, Smartphone, Search,
 } from "lucide-react";
 
 // ── Role definitions (Pro roles only) ─────────────────────────────
@@ -50,6 +50,8 @@ export default function AdminUsersPage() {
   const [pwError, setPwError] = useState("");
   const [roleDropdown, setRoleDropdown] = useState<string | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<"login" | "created" | "email">("login");
 
   const load = async () => {
     setLoading(true);
@@ -152,11 +154,22 @@ export default function AdminUsersPage() {
   const closeDropdown = () => { setRoleDropdown(null); setDropdownPos(null); };
   const toggleCollapse = (key: string) => setCollapsed(p => ({ ...p, [key]: !p[key] }));
 
+  // 搜尋 + 排序
+  const q = search.trim().toLowerCase();
+  const matchQ = (u: UserRow) =>
+    !q || u.email.toLowerCase().includes(q) || (u.institution ?? "").toLowerCase().includes(q);
+  const sortFn = (a: UserRow, b: UserRow) => {
+    if (sortKey === "email") return a.email.localeCompare(b.email);
+    const ka = sortKey === "login" ? a.last_sign_in_at : a.created_at;
+    const kb = sortKey === "login" ? b.last_sign_in_at : b.created_at;
+    return (kb ? new Date(kb).getTime() : 0) - (ka ? new Date(ka).getTime() : 0); // 新→舊
+  };
+
   // Group users by role (Pro) or as regular user (non-Pro)
-  const proUsers = users.filter(u => u.is_pro);
-  const regularUsers = users.filter(u => !u.is_pro);
+  const proUsers = users.filter(u => u.is_pro && matchQ(u));
+  const regularUsers = users.filter(u => !u.is_pro && matchQ(u)).sort(sortFn);
   const grouped = ROLE_ORDER
-    .map(role => ({ role, info: ROLES[role], members: proUsers.filter(u => u.pro_role === role) }))
+    .map(role => ({ role, info: ROLES[role], members: proUsers.filter(u => u.pro_role === role).sort(sortFn) }))
     .filter(g => g.members.length > 0);
 
   const GroupHeader = ({ groupKey, icon, label, color, bg, count }: {
@@ -230,9 +243,9 @@ export default function AdminUsersPage() {
 
         <td style={{ padding: "11px 14px" }}>
           <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--pro-text-muted)" }}>
-            <span>👤 {u.patients}</span>
-            <span>📋 {u.records}</span>
-            <span>📝 {u.notes}</span>
+            <span title="負責病患數" style={{ cursor: "help" }}>👤 {u.patients}</span>
+            <span title="建立的健康記錄數" style={{ cursor: "help" }}>📋 {u.records}</span>
+            <span title="SOAP 病歷筆記數" style={{ cursor: "help" }}>📝 {u.notes}</span>
           </div>
         </td>
 
@@ -364,9 +377,30 @@ export default function AdminUsersPage() {
             Pro {proUsers.length} · 用戶 {regularUsers.length}
           </span>
         </div>
-        <button onClick={load} style={{ background: "none", border: "1px solid var(--pro-border)", borderRadius: 7, padding: "6px 12px", color: "var(--pro-text-muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
-          <RefreshCw size={12} /> 重新整理
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <Search size={13} style={{ position: "absolute", left: 9, color: "var(--pro-text-muted)", pointerEvents: "none" }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜尋 email / 機構…"
+              style={{ background: "var(--pro-bg)", border: "1px solid var(--pro-border)", borderRadius: 7, padding: "6px 10px 6px 28px", color: "var(--pro-text)", fontSize: 12, width: 180, outline: "none" }}
+            />
+          </div>
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as "login" | "created" | "email")}
+            title="排序方式"
+            style={{ background: "var(--pro-bg)", border: "1px solid var(--pro-border)", borderRadius: 7, padding: "6px 8px", color: "var(--pro-text)", fontSize: 12, cursor: "pointer", outline: "none" }}
+          >
+            <option value="login">排序：最後登入</option>
+            <option value="created">排序：建立日期</option>
+            <option value="email">排序：Email</option>
+          </select>
+          <button onClick={load} style={{ background: "none", border: "1px solid var(--pro-border)", borderRadius: 7, padding: "6px 12px", color: "var(--pro-text-muted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+            <RefreshCw size={12} /> 重新整理
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -377,8 +411,8 @@ export default function AdminUsersPage() {
             <thead>
               <tr>
                 {["電子郵件", "角色", "最後登入", "活動量", "操作"].map((h) => (
-                  <th key={h} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--pro-text-muted)", borderBottom: "1px solid var(--pro-border)", background: "var(--pro-bg)" }}>
-                    {h}
+                  <th key={h} title={h === "活動量" ? "👤 負責病患數 · 📋 健康記錄數 · 📝 SOAP 病歷筆記數" : undefined} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--pro-text-muted)", borderBottom: "1px solid var(--pro-border)", background: "var(--pro-bg)", cursor: h === "活動量" ? "help" : undefined }}>
+                    {h}{h === "活動量" && <span style={{ marginLeft: 4, opacity: 0.6 }}>ⓘ</span>}
                   </th>
                 ))}
               </tr>
@@ -429,7 +463,7 @@ export default function AdminUsersPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               position: "fixed", top: dropdownPos.top, left: dropdownPos.left, zIndex: 9999,
-              background: "var(--pro-surface)", border: "1px solid var(--pro-border)",
+              background: "var(--pro-card)", border: "1px solid var(--pro-border)",
               borderRadius: 8, boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
               minWidth: 160,
             }}
