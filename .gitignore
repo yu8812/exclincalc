@@ -46,7 +46,7 @@ CLAUDE.md
 .claude/
 
 # Local-only docs and internal notes
-DOCS/
+.docs/
 IM.md
 TODO.md
 
