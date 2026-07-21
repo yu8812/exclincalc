@@ -46,11 +46,11 @@ function LoginForm() {
       return;
     }
 
-    // 尚未綁 TOTP（pro 角色強制設定）→ 引導至 /pro/security
+    // 尚未綁 TOTP（pro 角色強制設定）→ 引導至 /pro/security；demo 帳號豁免
     if (aal?.nextLevel === "aal1") {
       const { data: profile } = await supabase
-        .from("profiles").select("is_pro").eq("id", (await supabase.auth.getUser()).data.user!.id).single();
-      if (profile?.is_pro) {
+        .from("profiles").select("is_pro, is_demo").eq("id", (await supabase.auth.getUser()).data.user!.id).single();
+      if (profile?.is_pro && !profile.is_demo) {
         router.push("/pro/security?firstLogin=true");
         return;
       }

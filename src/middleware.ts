@@ -46,7 +46,7 @@ export async function middleware(req: NextRequest) {
   // 檢查 is_pro
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_pro")
+    .select("is_pro, is_demo")
     .eq("id", user.id)
     .single();
   if (!profile?.is_pro) {
@@ -55,6 +55,9 @@ export async function middleware(req: NextRequest) {
     url.searchParams.set("error", "unauthorized");
     return redirectWith(url);
   }
+
+  // demo 帳號（僅合成資料，DB 層亦豁免 AAL2）→ 免 MFA 強制，直接放行
+  if (profile.is_demo) return res;
 
   // /pro/security 是 enroll MFA 的入口，不論 AAL 都允許
   if (path.startsWith("/pro/security")) return res;
