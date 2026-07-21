@@ -3,6 +3,10 @@ main = ".open-next/worker.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# 非密鑰的公開設定（密鑰仍走 wrangler secret / 後台）
+[vars]
+APP_ORIGIN = "https://exclincalc.yuyulsc881209.workers.dev"
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"

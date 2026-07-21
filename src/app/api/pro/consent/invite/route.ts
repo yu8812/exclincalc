@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const clincalcUrl = process.env.NEXT_PUBLIC_CLINCALC_URL || "https://clincalc.pages.dev";
+  const clincalcUrl = process.env.NEXT_PUBLIC_CLINCALC_URL || "https://clincalc.yuyulsc881209.workers.dev";
   const link = `${clincalcUrl}/consent/${data.invite_token}`;
 
   return NextResponse.json({ token: data.invite_token, link, expires_at: data.invite_expires_at });
