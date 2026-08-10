@@ -5,7 +5,7 @@
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript)
-![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2041-336791?logo=postgresql)
+![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2037-336791?logo=postgresql)
 ![TOTP MFA](https://img.shields.io/badge/Auth-TOTP%20MFA-success)
 ![STRIDE](https://img.shields.io/badge/Security-STRIDE--analyzed-darkred)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
@@ -31,7 +31,7 @@ ExClinCalc Pro 是針對基層診所工作流程設計的醫師臨床決策支�
 ExClinCalc 的設計回應這兩個限制：
 
 - **完整工作流程閉環**：不是只做病歷編輯器，是**掛號 → 分診 → SOAP → 處方 → 調配**五個環節都做，反映真實診所運作
-- **資料庫層權限控制**：透過 PostgreSQL Row Level Security（**41 條 policy，含 6 條 RESTRICTIVE AAL2 閘門**），即使前端程式有漏洞，跨使用者資料也不會被讀走
+- **資料庫層權限控制**：透過 PostgreSQL Row Level Security（**37 條 policy，含 6 條 RESTRICTIVE AAL2 閘門**），即使前端程式有漏洞，跨使用者資料也不會被讀走
 - **TOTP 強制 MFA**：所有醫事人員角色強制雙重驗證，且實作 5 次失敗鎖定
 - **AI 為提示而非決策**：Gemini 用於 SOAP A/P 段建議、藥物交互敘述生成，最終決策仍由醫師按下「確認」
 
@@ -97,7 +97,7 @@ graph TB
     Auth -->|JWT + aal2| Middleware[Next.js Middleware<br/>路由保護 /pro/*]
     Middleware --> Routes[6 角色 RBAC<br/>分流到對應工作台]
 
-    Routes -->|讀寫| RLS[41 條 RLS Policy<br/>含 6 條 RESTRICTIVE AAL2 閘門]
+    Routes -->|讀寫| RLS[37 條 RLS Policy<br/>含 6 條 RESTRICTIVE AAL2 閘門]
     RLS --> DB[(PostgreSQL)]
     RLS -.->|trigger| AuditLog[(audit_logs<br/>稽核軌跡)]
 
@@ -124,7 +124,7 @@ graph TB
 
 ### 1. PostgreSQL Row Level Security（核心防線）
 
-兩個子系統共用同一份 PostgreSQL，**41 條 RLS policy**：權限檢查不寫在後端程式裡，而是直接由 PostgreSQL 在執行查詢前比對 JWT 與 policy。即使前端程式有漏洞，跨使用者資料也不會被讀走。
+兩個子系統共用同一份 PostgreSQL，**37 條 RLS policy**：權限檢查不寫在後端程式裡，而是直接由 PostgreSQL 在執行查詢前比對 JWT 與 policy。即使前端程式有漏洞，跨使用者資料也不會被讀走。
 
 安全狀態由 8 個 forward migration 逐步建構（`supabase/migrations/`，見該資料夾 README）：角色權限授權與欄位級 REVOKE（01）、同意書完整性（02、06）、PHI 全域 AAL2（03、04）、**6 張純醫事表的 RESTRICTIVE AAL2 閘門**（05，與 permissive policy 做 AND，確保 MFA 無法被繞過）、角色能力矩陣（07，藥師只能配藥、護理師寫／醫師讀 triage）、Demo 帳號豁免（08）。基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql)。
 

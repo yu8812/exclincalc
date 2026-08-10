@@ -5,7 +5,7 @@
 
 ## 核對到的事實
 
-- **RLS policy 總數：41 條**（線上 `pg_policies` 實數）
+- **RLS policy 總數：37 條**（線上 `pg_policies` 實數）
 - **受 RLS 保護的資料表：13 張**（全部 13 張都有 policy）
 - **角色（pro_role）：6 種** — doctor / nurse / pharmacist / admin_staff / admin / super_admin
 
@@ -39,19 +39,22 @@
 |---|---|---|
 | **health_records** | 本人（`user_id`）；醫師需 **active 同意書 + MFA/demo** | 本人 |
 | **patient_consents** | 該醫師（自己被授權的）、該病患（自己給的）| 由 `accept_consent()` SECURITY DEFINER 函式寫入 |
-| **medications** | 任何人（`true`）| pro admin / super_admin（另有一條 legacy `role='doctor'/'admin'` 判定，見觀察 3）|
-| **medical_references** | 任何人 | 同上 |
+| **medications** | 任何人（`true`）| pro admin / super_admin |
+| **medical_references** | 任何人 | pro admin / super_admin |
 | **pro_resources** | pro 使用者讀 public 或自己的 | 建立者管自己的；admin 管全部 |
 | **audit_logs** | admin / super_admin | 使用者只能寫自己的（`actor_id`）|
 | **profiles** | 本人；admin 讀全部（`is_current_admin()`）| 本人改自己；`service_role` 全權 |
 
 ---
 
-## 觀察（僅記錄，凍結期不修改；供解凍後清理）
+## 冗餘清理紀錄（migration 09，2026-08）
 
-1. **profiles 有 3 條完全相同的 UPDATE policy**（`Users can update own profile` / `Users update own profile` / `update_own_profile`，皆 `auth.uid() = id`）。功能無害，但重複；解凍後可合併。這也是 41 這個數字裡的一部分。
-2. **medications / medical_references 各有兩條寫入 policy**：一條用 `pro_role IN (admin, super_admin)`（正確），另一條 legacy 用 **`role`**（民眾端欄位，非 `pro_role`）判 `role IN (doctor, admin)`。由於 pro 帳號的 `role` 通常是 `user`，這條 legacy policy 實際上幾乎不會命中 → **實質上只有 pro admin 能寫藥物庫**。不影響安全（沒放寬權限），但語意混亂，解凍後建議移除 legacy 條。
-3. 上述兩點是「41 條」裡可精簡的部分。若解凍後清理，policy 數會下降——**屆時務必同步更新所有備審引用的數字**。
+核對過程曾發現兩處冗餘，已於 **migration 09** 清理，**不影響任何實際存取權限**（僅去重）：
+
+1. ~~profiles 有 3 條完全同義的 UPDATE policy~~ → 已保留 1 刪 2。
+2. ~~medications / medical_references 各有 1 條 legacy（用 `role` 而非 `pro_role`）寫入 policy~~ → 已刪除（核對過 0 帳號依賴）。
+
+**結果：policy 總數 41 → 37**（本文件已為清理後的 37）。所有對外引用一律用 **37**。
 
 ---
 
