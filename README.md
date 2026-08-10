@@ -291,7 +291,7 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 3. **臨床決策支援工具的真實場域評估方法**
    ExClinCalc 在功能上完整，但**沒有在真實診所運作過**。學界很多 CDSS 研究停留在「功能完整度評估」，缺少「實際導入評估」。**怎麼設計嚴謹的 CDSS 真實場域評估方法？包含使用者接受度、工作流程影響、警示疲勞量測？** 這是 implementation science 的研究方向。
 
-延伸閱讀：[「為什麼選 RLS 而不是應用層權限」案例研究](https://github.com/yu8812/exclincalc/blob/main/docs/case-study-rls.md)（撰寫中）
+延伸閱讀：[「為什麼選 RLS 而不是應用層權限」案例研究](https://github.com/yu8812/exclincalc/blob/main/docs/case-study-rls.md)
 
 ## 學術引用
 
