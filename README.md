@@ -11,7 +11,7 @@
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-🔒 **完整威脅模型分析**（24 個威脅、6 個 STRIDE 類別、已公開）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+🔒 **完整威脅模型分析**（28 個威脅、6 個 STRIDE 類別、已公開）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
 
 ![Doctor Dashboard](assets/01-doctor-dashboard.png)
 
