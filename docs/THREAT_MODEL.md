@@ -1,7 +1,7 @@
 # ExClinCalc 威脅模型分析（STRIDE Framework）
 
 > 編製日期：2026-05-15
-> 適用範圍：ExClinCalc 0.1.0（公開 demo 部署於 exclincalc.ro883c.workers.dev）
+> 適用範圍：ExClinCalc 0.1.0（公開 demo 部署於 exclincalc.yuyulsc881209.workers.dev）
 > 框架：[Microsoft STRIDE](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats)
 > 目的：(1) 推甄面試 / 研究計劃書「資訊安全研究方向」的工程證據；(2) 提供未來醫院 IT 接手時的安全分析起點。
 >
@@ -13,8 +13,8 @@
 
 ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 - 6 角色 RBAC（診所負責人 / 醫師 / 護理師 / 藥師 / 櫃台 / 系統管理員）
-- 14 張 PostgreSQL 資料表
-- 29 條 Row Level Security policy
+- 13 張 PostgreSQL 資料表
+- 37 條 Row Level Security policy
 - TOTP MFA (RFC 6238)
 - 完整稽核軌跡
 - 12 組關鍵藥物交互即時警示
@@ -49,7 +49,7 @@ ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 ┌──────────────────────────────────────────────────────────────────┐
 │                        Trust Boundary 3                          │
 │  Supabase (PostgreSQL 16) + Auth (GoTrue)                        │
-│  └─ 14 張資料表 + 29 條 RLS policy                              │
+│  └─ 13 張資料表 + 37 條 RLS policy                              │
 │  └─ Auth schema（受 Supabase 管轄）                              │
 │  └─ Audit log table                                              │
 └──────────────────────────────────────────────────────────────────┘
@@ -81,6 +81,7 @@ ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 ## 三、STRIDE 逐項分析
 
 > STRIDE = Spoofing / Tampering / Repudiation / Information disclosure / Denial of Service / Elevation of privilege
+> **本文件共列舉 28 條威脅**：S1–S4(4) · T1–T6(6) · R1–R3(3) · I1–I6(6) · D1–D4(4) · E1–E5(5)。
 
 ### S — Spoofing（假冒身份）
 
@@ -176,7 +177,7 @@ ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 |---|---|---|---|---|
 | E1 | 護理師透過 API 直接呼叫醫師才能用的 endpoint | 1-7 | RLS policy 檢查 role；不論 endpoint、policy 在 DB 層生效 | **低** |
 | E2 | 攻擊者修改 client-side role state（前端 JS）讓自己變 admin | 1-7 | Frontend role 只用於 UI render；**真實授權在 DB RLS、不信任 client** | **低** |
-| E3 | RLS policy 寫錯邏輯造成 horizontal privilege escalation | 1-7 | 29 條 policy 有 unit test 覆蓋（用不同 role JWT 測試）| **中** ── 取決於測試覆蓋率 |
+| E3 | RLS policy 寫錯邏輯造成 horizontal privilege escalation | 1-7 | 37 條 policy 有 unit test 覆蓋（用不同 role JWT 測試）| **中** ── 取決於測試覆蓋率 |
 | E4 | service_role JWT 洩漏（這個 JWT 可繞過 RLS）| 全部 | service_role key 只在 Cloudflare Workers env var、不出現在 client code 或 git | **中** ── 環境變數管理 |
 | E5 | 攻擊者讓系管理員幫忙重設密碼 / 變角色（social engineering）| 5, 6 | 重設密碼 / 改角色需 admin TOTP + 自動 audit log + 通知 | **中** ── 社交工程難擋 |
 
@@ -225,15 +226,15 @@ ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 
 ### 30 秒版
 
-> 「我設計了 ExClinCalc 的 multi-tenant 醫療資料隔離架構：14 表 29 條 PostgreSQL RLS、6 角色 RBAC、TOTP MFA、不可竄改稽核 log。
+> 「我設計了 ExClinCalc 的 multi-tenant 醫療資料隔離架構：13 表 37 條 PostgreSQL RLS、6 角色 RBAC、TOTP MFA、不可竄改稽核 log。
 >
-> 我做了完整 STRIDE 威脅模型分析（見 `docs/THREAT_MODEL.md`），列出 24 個威脅 + 對應防禦 + 殘餘風險。
+> 我做了完整 STRIDE 威脅模型分析（見 `docs/THREAT_MODEL.md`），列出 28 個威脅 + 對應防禦 + 殘餘風險。
 >
 > 但我**承認系統不解組織問題**：HIPAA 認證、IRB 倫理、HSM 基建這些不在 code 範圍。所以這是研究 POC、不是 production 系統。」
 
 ### 對陽交大資安所教授
 
-> 「老師、我的 ExClinCalc 是『multi-tenant 醫療資料隔離』的應用層案例。我用 STRIDE 分析了 24 個威脅、特別關注 **Information Disclosure** 和 **Elevation of Privilege**（這兩類在 multi-tenant SaaS 最危險）。
+> 「老師、我的 ExClinCalc 是『multi-tenant 醫療資料隔離』的應用層案例。我用 STRIDE 分析了 28 個威脅、特別關注 **Information Disclosure** 和 **Elevation of Privilege**（這兩類在 multi-tenant SaaS 最危險）。
 >
 > 我希望在  貴所深入研究的議題是『**FHIR 標準下的 multi-tenant 安全架構**』── PostgreSQL RLS（資料庫層）vs SMART on FHIR scope（應用層）對跨院 CDSS 哪個更合適？要怎麼形式化驗證？這正是我需要老師的研究方法訓練才做得起來的事。」
 
@@ -270,7 +271,8 @@ ExClinCalc 是個診所臨床決策支援系統（CDSS），實作了：
 
 | 日期 | 變動 | 作者 |
 |---|---|---|
-| 2026-05-15 | 初版（24 個威脅、6 個 STRIDE 類別、6 條對外敘事）| Chia-Yu Chiang + Claude（Day 2 of clinconvert 5 day upgrade）|
+| 2026-05-15 | 初版（敘事寫 24 個威脅、6 個 STRIDE 類別、6 條對外敘事）| Chia-Yu Chiang + Claude（Day 2 of clinconvert 5 day upgrade）|
+| 2026-08-10 | 校準：STRIDE 表格實際列舉為 **28 條**（S1-4·T1-6·R1-3·I1-6·D1-4·E1-5），修正對外敘事數字 24→28（初版敘事誤植）；同步表數/policy 至線上現況 **13 表 / 37 policy**（見 `permission-matrix.md`）；更新 demo 網址。| Chia-Yu Chiang + Claude |
 
 ---
 
