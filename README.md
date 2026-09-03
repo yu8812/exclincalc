@@ -171,7 +171,7 @@ npm install
 # 2. 建立 .env.local（範本見下方）
 
 # 3. 初始化資料庫：在 Supabase SQL Editor 依序執行
-#    supabase/complete_setup.sql       (14 張表 + 22 條基礎 RLS)
+#    supabase/complete_setup.sql       (基礎 schema：10 張表 + 基礎 RLS；跑完下方 migrations 後最終為 13 表 / 37 policy)
 #    supabase/clinic_flow.sql          (擴充處方欄位 + 補 RLS)
 #    supabase/create_patient_consents.sql
 #    supabase/create_reference_pdf_links.sql
@@ -269,7 +269,7 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 
 | 想看什麼 | 看哪個檔 |
 |---|---|
-| 完整 14 張表 + 29 條 RLS policy | [`supabase/complete_setup.sql`](supabase/complete_setup.sql) |
+| 權威 RLS 清單（13 表 / 37 policy，線上實測）| [`docs/permission-matrix.md`](docs/permission-matrix.md)；基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql) |
 | TOTP 兩階段強制流程 | [`src/middleware.ts`](src/middleware.ts) + [`src/app/auth/login/page.tsx`](src/app/auth/login/page.tsx) + [`src/app/auth/mfa-verify/page.tsx`](src/app/auth/mfa-verify/page.tsx) |
 | 醫師 SOAP 七步驟 + 20 種主訴模板 | [`src/app/(pro)/pro/encounter/`](src/app/(pro)/pro/encounter/) |
 | 藥物交互即時警示（12 組） | [`src/app/api/pro/drug-interactions/`](src/app/api/pro/drug-interactions/) |
@@ -283,7 +283,7 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 完成 ExClinCalc 後，我整理出三個值得深入研究的方向，作為碩士階段研究計畫的延伸：
 
 1. **多租戶醫療系統的 RLS 設計方法論**
-   我用 29 條 RLS policy 取代應用層權限，但這個設計**沒有系統化的設計方法論**。每次加新表都要思考「policy 怎麼寫」，容易遺漏或不一致。**怎麼從業務需求自動推導出 RLS policy 草稿？怎麼形式化驗證 policy 的完整性？** 這是值得學界研究的問題。
+   我用 37 條 RLS policy 取代應用層權限，但這個設計**沒有系統化的設計方法論**。每次加新表都要思考「policy 怎麼寫」，容易遺漏或不一致。**怎麼從業務需求自動推導出 RLS policy 草稿？怎麼形式化驗證 policy 的完整性？** 這是值得學界研究的問題。
 
 2. **LLM 安全嵌入 SOAP 工作流程的分級架構**
    ExClinCalc 目前讓 Gemini 輔助 SOAP 的 A（Assessment）、P（Plan）兩段，但**沒有量化評估幻覺率與覆蓋率的取捨**。我的「先規則後 LLM」策略在 KDIGO 分期、藥物交互這類有明確規則的場景運作良好，但在「鑑別診斷」這類本質模糊的場域有限制。**怎麼設計分級的 LLM 介入比例？怎麼量化評估？** 是值得研究的問題。
