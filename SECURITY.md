@@ -23,7 +23,7 @@ ExClinCalc 在四個層級實作安全控制：
 
 ### 1. 資料庫層（核心防線）
 
-- **PostgreSQL Row Level Security**：14 張表 × 29 條 policy
+- **PostgreSQL Row Level Security**：13 張表 × 37 條 policy（線上 `pg_policies` 實查，見 [`docs/permission-matrix.md`](docs/permission-matrix.md)）
 - 所有讀寫操作的 query 自動套用 RLS，即使應用層被攻破也無法跨角色讀取資料
 - Policy 設計遵循「**從 `auth.uid()` 開始往下推 join**」原則
 - 完整 schema：[`supabase/complete_setup.sql`](supabase/complete_setup.sql)
