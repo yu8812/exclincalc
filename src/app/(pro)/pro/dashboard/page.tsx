@@ -14,11 +14,15 @@ interface Stats {
   recentPatients: Array<{ id: string; full_name: string; updated_at: string; sex: string | null }>;
 }
 
+// 問候語的稱謂依 pro_role 顯示(與側邊欄的角色標籤一致);管理類角色不加稱謂
+const ROLE_TITLE: Record<string, string> = { doctor: "醫師", nurse: "護理師", pharmacist: "藥師" };
+
 export default function ProDashboard() {
   const [stats, setStats] = useState<Stats>({
     totalPatients: 0, totalRecords: 0, totalNotes: 0, waitingCount: 0, recentPatients: [],
   });
-  const [doctorName, setDoctorName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [roleTitle, setRoleTitle] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,7 +40,7 @@ export default function ProDashboard() {
         { count: wCount },
         { data: recentPts },
       ] = await Promise.all([
-        supabase.from("profiles").select("name").eq("id", user.id).single(),
+        supabase.from("profiles").select("name, pro_role").eq("id", user.id).single(),
         supabase.from("doctor_patients").select("*", { count: "exact", head: true }).eq("doctor_id", user.id),
         supabase.from("clinical_records").select("*", { count: "exact", head: true }).eq("doctor_id", user.id),
         supabase.from("soap_notes").select("*", { count: "exact", head: true }).eq("doctor_id", user.id),
@@ -44,7 +48,8 @@ export default function ProDashboard() {
         supabase.from("doctor_patients").select("id, full_name, updated_at, sex").eq("doctor_id", user.id).order("updated_at", { ascending: false }).limit(5),
       ]);
 
-      setDoctorName(profile?.name || "醫師");
+      setDisplayName(profile?.name || "");
+      setRoleTitle(ROLE_TITLE[profile?.pro_role ?? ""] ?? "");
       setStats({
         totalPatients: pCount || 0,
         totalRecords: rCount || 0,
@@ -72,7 +77,7 @@ export default function ProDashboard() {
       {/* Welcome header */}
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--pro-text)", marginBottom: 4 }}>
-          {greeting}，{doctorName} 醫師 👋
+          {greeting}{displayName && `，${displayName}`}{roleTitle && ` ${roleTitle}`} 👋
         </h1>
         <p style={{ fontSize: 13, color: "var(--pro-text-muted)" }}>
           {now.toLocaleDateString("zh-TW", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
