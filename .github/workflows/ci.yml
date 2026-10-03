@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      # lock 檔是用 npm 11 產生的；Node 22 內建的 npm 10 會把 vite 的選用相依（esbuild）當成必要，npm ci 會失敗
+      - run: npm install -g npm@11
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
@@ -28,6 +30,8 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      # lock 檔是用 npm 11 產生的；Node 22 內建的 npm 10 會把 vite 的選用相依（esbuild）當成必要，npm ci 會失敗
+      - run: npm install -g npm@11
       - run: npm ci
       - uses: supabase/setup-cli@v1
         with:
