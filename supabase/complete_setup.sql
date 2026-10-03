@@ -35,22 +35,27 @@ create table if not exists profiles (
   institution   text,
   license_number text,
   settings      jsonb default '{}',   -- 同步自 localStorage 的 UI 設定
+  is_demo       boolean not null default false,  -- 展示帳號（migration 08 / 13）
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
 );
 
--- 若 profiles 表已存在，補充 settings 欄位
+-- 若 profiles 表已存在，補充 settings / is_demo 欄位
 alter table profiles add column if not exists settings jsonb default '{}';
+alter table profiles add column if not exists is_demo boolean not null default false;
 
 alter table profiles enable row level security;
 
+-- 名字和正式庫一致（migration 10 / 11）；舊名字順手清掉，重跑不會長出重複的
 drop policy if exists "Users read own profile" on profiles;
-create policy "Users read own profile" on profiles
-  for select using (auth.uid() = id);
-
 drop policy if exists "Users update own profile" on profiles;
-create policy "Users update own profile" on profiles
-  for update using (auth.uid() = id);
+drop policy if exists "read_own_profile" on profiles;
+create policy "read_own_profile" on profiles
+  for select to authenticated using (auth.uid() = id);
+
+drop policy if exists "update_own_profile" on profiles;
+create policy "update_own_profile" on profiles
+  for update to authenticated using (auth.uid() = id) with check (auth.uid() = id);
 
 -- 「Admins read all profiles」policy 移至 helper 定義之後（見 1b 區塊末），
 -- 避免 clean install 時 CREATE POLICY 參照尚未建立的 is_current_admin()（SEC001D-01）。
@@ -90,11 +95,14 @@ create trigger on_auth_user_created
 --     與 migrations 03/04 同定義，確保 fresh install 與 migration 產出一致的安全狀態）
 -- ───────────────────────────────────────────────────────────────────
 
+-- 管理員 = admin + is_pro + 不是展示帳號 + 這次登入有過 MFA（與 migration 13 同定義）
 create or replace function public.is_current_admin()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists(select 1 from public.profiles
+  select (auth.jwt() ->> 'aal') = 'aal2'
+     and exists(select 1 from public.profiles
                 where id = auth.uid() and is_pro = true
-                  and pro_role in ('admin','super_admin'));
+                  and pro_role in ('admin','super_admin')
+                  and is_demo = false);
 $$;
 revoke execute on function public.is_current_admin() from public, anon;
 grant execute on function public.is_current_admin() to authenticated;
@@ -223,13 +231,8 @@ create policy "Anyone can read medications" on medications
 
 drop policy if exists "Pro admins write medications" on medications;
 create policy "Pro admins write medications" on medications
-  for all using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and is_pro = true
-        and pro_role in ('admin', 'super_admin')
-    )
+  for all to authenticated
+  using (public.is_current_admin()) with check (public.is_current_admin()
   );
 
 create index if not exists medications_name_zh_idx   on medications using gin(to_tsvector('simple', name_zh));
@@ -266,13 +269,8 @@ create policy "Anyone can read references" on medical_references
 
 drop policy if exists "Pro admins write medical_references" on medical_references;
 create policy "Pro admins write medical_references" on medical_references
-  for all using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and is_pro = true
-        and pro_role in ('admin', 'super_admin')
-    )
+  for all to authenticated
+  using (public.is_current_admin()) with check (public.is_current_admin()
   );
 
 
@@ -475,7 +473,7 @@ create table if not exists pro_resources (
   description text,
   source      text,
   tags        text[] default '{}',
-  is_public   boolean default true,
+  is_public   boolean default false,  -- 預設不公開（migration 13）
   created_by  uuid references auth.users(id) on delete set null,
   created_at  timestamptz default now()
 );
@@ -486,28 +484,20 @@ drop policy if exists "Pro users read public resources" on pro_resources;
 create policy "Pro users read public resources" on pro_resources
   for select using (is_public = true or auth.uid() = created_by);
 
+-- 一般 pro 使用者只能管「自己的、不公開的」資源；公開資源只有管理員能動（migration 13）
 drop policy if exists "Pro users create resources" on pro_resources;
-create policy "Pro users create resources" on pro_resources
-  for insert with check (auth.uid() = created_by);
-
 drop policy if exists "Creators manage own resources" on pro_resources;
-create policy "Creators manage own resources" on pro_resources
-  for all using (auth.uid() = created_by);
+drop policy if exists "Pro users update cover on public resources" on pro_resources;
+drop policy if exists "Pro users manage own private resources" on pro_resources;
+create policy "Pro users manage own private resources" on pro_resources
+  for all to authenticated
+  using (created_by = auth.uid() and public.is_active_pro_aal2())
+  with check (created_by = auth.uid() and is_public = false and public.is_active_pro_aal2());
 
 drop policy if exists "Admins manage all resources" on pro_resources;
 create policy "Admins manage all resources" on pro_resources
-  for all using (
-    exists (
-      select 1 from profiles
-      where profiles.id = auth.uid()
-        and profiles.pro_role in ('admin', 'super_admin')
-    )
-  );
-
-drop policy if exists "Pro users update cover on public resources" on pro_resources;
-create policy "Pro users update cover on public resources" on pro_resources
-  for update using (is_public = true)
-  with check (is_public = true);
+  for all to authenticated
+  using (public.is_current_admin()) with check (public.is_current_admin());
 
 create index if not exists pro_resources_category_idx on pro_resources(category);
 create index if not exists pro_resources_tags_idx     on pro_resources using gin(tags);
@@ -533,13 +523,7 @@ alter table audit_logs enable row level security;
 -- 只有 admin/super_admin 可讀取稽核記錄
 drop policy if exists "Admins read audit logs" on audit_logs;
 create policy "Admins read audit logs" on audit_logs
-  for select using (
-    exists (
-      select 1 from profiles
-      where id = auth.uid()
-        and pro_role in ('admin', 'super_admin')
-    )
-  );
+  for select to authenticated using (public.is_current_admin());
 
 -- 伺服器端（service role）負責寫入，前端不可直接寫
 -- 注意：insert 透過 API route 使用 service role key 完成

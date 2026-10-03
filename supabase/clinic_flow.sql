@@ -88,20 +88,11 @@ alter table audit_logs
   add column if not exists resource_type text,
   add column if not exists resource_id   text;
 
--- 允許登入用戶插入自己的稽核記錄（使用原表的 actor_id 欄位）
+-- audit_logs 只由伺服器（service role）寫入。以前這裡讓登入者寫自己的紀錄，等於可以偽造，
+-- migration 13 已拿掉；重跑這個檔案也只會把它清掉，不會再建回來。
 drop policy if exists "Users insert own logs" on audit_logs;
-create policy "Users insert own logs" on audit_logs
-  for insert with check (auth.uid() = actor_id);
 
 
--- ── 5. 稽核日誌 RPC（SECURITY DEFINER 繞過 RLS）────────────
-create or replace function insert_audit_log(
-  p_action        text,
-  p_resource_type text,
-  p_resource_id   text default null,
-  p_details       jsonb default '{}'
-) returns void language plpgsql security definer as $$
-begin
-  insert into audit_logs(actor_id, action, resource_type, resource_id, details)
-  values (auth.uid(), p_action, p_resource_type, p_resource_id, p_details);
-end; $$;
+-- ── 5. （已移除）insert_audit_log() ─────────────────────────
+-- 這個 SECURITY DEFINER 函式沒有任何呼叫者，卻連 anon 都能執行、可寫入任意稽核紀錄。migration 13 刪除。
+drop function if exists insert_audit_log(text, text, text, jsonb);

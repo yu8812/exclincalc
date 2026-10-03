@@ -19,7 +19,14 @@ export const SCHEMA_FILES = [
   "supabase/migrations/20260719_05_restrictive_aal2_gate.sql",
   "supabase/migrations/20260719_06_consent_deletion_lifecycle.sql",
   "supabase/migrations/20260719_07_role_capability_matrix.sql",
-  "supabase/rate_limits.sql",
+  "supabase/migrations/20260721_08_demo_aal2_exemption.sql",
+  "supabase/migrations/20260810_09_policy_cleanup.sql",
+  "supabase/migrations/20261003_10_profiles_exposure_fix.sql",
+  "supabase/migrations/20261003_11_schema_drift_sync.sql",
+  "supabase/migrations/20261003_12_rate_limits.sql",
+  "supabase/migrations/20261003_13_admin_and_demo_hardening.sql",
+  "supabase/migrations/20261003_14_clinical_audit_log.sql",
+  "supabase/migrations/20261003_15_dispense_attribution.sql",
 ];
 
 export async function applyAll(client, files = SCHEMA_FILES) {

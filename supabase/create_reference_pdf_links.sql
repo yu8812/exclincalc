@@ -39,8 +39,9 @@ CREATE INDEX IF NOT EXISTS idx_ref_pdf_status ON reference_pdf_links (status, de
 -- RLS：僅 Pro 用戶可查看（管理員可寫）
 ALTER TABLE reference_pdf_links ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "pro_users_read_ref_pdfs" ON reference_pdf_links;
 CREATE POLICY "pro_users_read_ref_pdfs"
-  ON reference_pdf_links FOR SELECT
+  ON reference_pdf_links FOR SELECT TO authenticated
   USING (
     EXISTS (
       SELECT 1 FROM profiles
@@ -48,15 +49,14 @@ CREATE POLICY "pro_users_read_ref_pdfs"
     )
   );
 
+-- 寫入只限通過 MFA 的真管理員（與 migration 13 的 is_current_admin 一致，展示帳號不行）
+DROP POLICY IF EXISTS "admins_manage_ref_pdfs" ON reference_pdf_links;
 CREATE POLICY "admins_manage_ref_pdfs"
-  ON reference_pdf_links FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM profiles
-      WHERE profiles.id = auth.uid()
-        AND profiles.pro_role IN ('admin', 'super_admin')
-    )
-  );
+  ON reference_pdf_links FOR ALL TO authenticated
+  USING (public.is_current_admin())
+  WITH CHECK (public.is_current_admin());
+
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON reference_pdf_links FROM anon;
 
 -- ═══════════════════════════════════════════════════════════
 -- 種子資料：已知 PDF 連結（2026-04-20 版本）

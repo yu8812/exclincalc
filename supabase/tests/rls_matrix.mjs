@@ -62,6 +62,25 @@ async function asAnon(c, fn) {
   } finally { await c.query("rollback"); }
 }
 
+// 以某身分寫入（可帶 request header），再切回 postgres 檢查結果；整個交易最後 rollback。
+// 用來驗證 trigger 寫進去的東西（一般身分讀不到稽核表，所以要切回來看）。
+async function writeThenInspect(c, uid, aal, { headers, rawHeaders } = {}, writeFn, inspectFn) {
+  await c.query("begin");
+  try {
+    await c.query("set local role authenticated");
+    await c.query("select set_config('request.jwt.claims', $1, true)",
+      [JSON.stringify({ sub: uid, role: "authenticated", aal })]);
+    if (headers) await c.query("select set_config('request.headers', $1, true)", [JSON.stringify(headers)]);
+    if (rawHeaders) await c.query("select set_config('request.headers', $1, true)", [rawHeaders]);
+    let wrote = true;
+    try { await writeFn(); } catch { wrote = false; }
+    await c.query("reset role");
+    return { wrote, ...(wrote ? await inspectFn() : {}) };
+  } finally {
+    await c.query("rollback");
+  }
+}
+
 async function canSelect(c, uid, aal, sql, params) {
   return asUser(c, uid, aal, async () => {
     try { const r = await c.query(sql, params); return r.rowCount > 0; }
@@ -242,6 +261,191 @@ async function main() {
   check("藥師 aal2 不可寫 triage_vitals（角色排除）",
     !(await canWrite(c, pharm, "aal2", "insert into public.triage_vitals (patient_id, nurse_id) values ($1,$2)", [patientId, pharm])));
 
+  // ════ 2026-10：病歷稽核（migration 14）════════════════════════════
+  const admin     = await seedUser(c, "a@test.local", true, "admin");
+  const demoAdmin = await seedUser(c, "da@test.local", true, "admin");
+  const demoNurse = await seedUser(c, "dn@test.local", true, "nurse");
+  const demoDoc   = await seedUser(c, "dd@test.local", true, "doctor");
+  const pharm2    = await seedUser(c, "p2@test.local", true, "pharmacist");
+  await c.query("update public.profiles set is_demo = true where id = any($1)", [[demoAdmin, demoNurse, demoDoc]]);
+
+  const lastAudit = async (rowId) => (await c.query(
+    `select action, actor_id, actor_role, old_row, new_row, ip, user_agent
+       from public.clinical_audit_log where row_id = $1 order by id desc limit 1`, [rowId])).rows[0] ?? {};
+
+  {
+    const r = await writeThenInspect(c, doctor, "aal2", {},
+      () => c.query("update public.clinical_records set assessment = 'after' where id = $1", [cr[0].id]),
+      () => lastAudit(cr[0].id));
+    check("稽核：醫師改自己的病歷 → 多一筆 UPDATE，記下操作者與角色",
+      r.wrote && r.action === "UPDATE" && r.actor_id === doctor && r.actor_role === "doctor");
+    check("稽核：UPDATE 同時留下改之前與改之後的內容",
+      r.old_row?.assessment === null && r.new_row?.assessment === "after");
+  }
+  {
+    const { rows: [note] } = await c.query(
+      `insert into public.soap_notes (doctor_id, patient_id, title) values ($1,$2,'原本的筆記') returning id`, [doctor, patientId]);
+    const r = await writeThenInspect(c, doctor, "aal2", {},
+      () => c.query("delete from public.soap_notes where id = $1", [note.id]),
+      () => lastAudit(note.id));
+    check("稽核：醫師刪自己的 SOAP 筆記 → 留下 DELETE，old_row 有原內容",
+      r.wrote && r.action === "DELETE" && r.old_row?.title === "原本的筆記" && r.new_row === null);
+    await c.query("delete from public.soap_notes where id = $1", [note.id]);
+  }
+  {
+    const r = await writeThenInspect(c, doctor, "aal2",
+      { headers: { "user-agent": "Mozilla/5.0 test", "x-forwarded-for": "203.0.113.9, 10.0.0.1" } },
+      () => c.query("update public.clinical_records set plan = 'p1' where id = $1", [cr[0].id]),
+      () => lastAudit(cr[0].id));
+    check("稽核：有 request header 時記下 IP（x-forwarded-for 第一段）和瀏覽器",
+      r.wrote && r.ip === "203.0.113.9" && r.user_agent === "Mozilla/5.0 test");
+  }
+  {
+    const r = await writeThenInspect(c, doctor, "aal2",
+      { headers: { "cf-connecting-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.9" } },
+      () => c.query("update public.clinical_records set plan = 'p2' where id = $1", [cr[0].id]),
+      () => lastAudit(cr[0].id));
+    check("稽核：有 cf-connecting-ip 時優先用它", r.wrote && r.ip === "198.51.100.7");
+  }
+  {
+    const r = await writeThenInspect(c, doctor, "aal2", {},
+      () => c.query("update public.clinical_records set plan = 'p3' where id = $1", [cr[0].id]),
+      () => lastAudit(cr[0].id));
+    check("稽核：沒有 request header 時寫入照常成功，ip / user_agent 是 null",
+      r.wrote && r.action === "UPDATE" && r.ip === null && r.user_agent === null);
+  }
+  {
+    const r = await writeThenInspect(c, doctor, "aal2", { rawHeaders: "{not json" },
+      () => c.query("update public.clinical_records set plan = 'p4' where id = $1", [cr[0].id]),
+      () => lastAudit(cr[0].id));
+    check("稽核：header 不是合法 JSON 也不會擋住病歷寫入", r.wrote && r.ip === null);
+  }
+  {
+    const r = await writeThenInspect(c, doctor, "aal2", {},
+      () => c.query("update public.clinical_records set plan = plan where id = $1", [cr[0].id]),
+      async () => ({ n: (await c.query("select count(*)::int as n from public.clinical_audit_log where row_id = $1", [cr[0].id])).rows[0].n }));
+    const { rows: [{ n: before }] } = await c.query("select count(*)::int as n from public.clinical_audit_log where row_id = $1", [cr[0].id]);
+    check("稽核：內容完全沒變的 UPDATE 不另外記一筆", r.wrote && r.n === before);
+  }
+  {
+    // fail-closed：讓稽核表暫時拒收任何資料，病歷寫入必須跟著失敗
+    await c.query("begin");
+    let wrote = true;
+    try {
+      await c.query("alter table public.clinical_audit_log add constraint audit_reject_all check (false) not valid");
+      await c.query("set local role authenticated");
+      await c.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: doctor, role: "authenticated", aal: "aal2" })]);
+      await c.query("update public.clinical_records set plan = 'should-fail' where id = $1", [cr[0].id]);
+    } catch { wrote = false; } finally { await c.query("rollback"); }
+    check("稽核：稽核寫不進去時，原本的病歷修改也一起失敗（fail-closed）", wrote === false);
+  }
+  check("稽核表：醫師讀不到", !(await canSelect(c, doctor, "aal2", "select 1 from public.clinical_audit_log")));
+  check("稽核表：護理師讀不到", !(await canSelect(c, nurse, "aal2", "select 1 from public.clinical_audit_log")));
+  check("稽核表：藥師讀不到", !(await canSelect(c, pharm, "aal2", "select 1 from public.clinical_audit_log")));
+  check("稽核表：管理員（aal2）讀得到", await canSelect(c, admin, "aal2", "select 1 from public.clinical_audit_log"));
+  check("稽核表：管理員沒過 MFA（aal1）讀不到", !(await canSelect(c, admin, "aal1", "select 1 from public.clinical_audit_log")));
+  check("稽核表：展示用 admin 讀不到（密碼公開）", !(await canSelect(c, demoAdmin, "aal2", "select 1 from public.clinical_audit_log")));
+  check("稽核表：任何人都不能直接新增",
+    !(await canWrite(c, admin, "aal2", "insert into public.clinical_audit_log (table_name, action) values ('clinical_records','INSERT')")));
+  check("稽核表：任何人都不能修改",
+    !(await canWrite(c, admin, "aal2", "update public.clinical_audit_log set action = 'DELETE'")));
+  check("稽核表：任何人都不能刪除",
+    !(await canWrite(c, admin, "aal2", "delete from public.clinical_audit_log")));
+
+  // ════ 2026-10：調配由資料庫蓋章（migration 15）══════════════════════
+  {
+    const r = await writeThenInspect(c, pharm, "aal2", {},
+      () => c.query("update public.clinical_records set dispensed_at = '2020-01-01', dispensed_by = $2 where id = $1", [cr[0].id, doctor]),
+      async () => (await c.query("select dispensed_by, dispensed_at > now() - interval '1 minute' as fresh from public.clinical_records where id = $1", [cr[0].id])).rows[0]);
+    check("調配：藥師傳別人的 dispensed_by，存進去的仍是藥師自己", r.wrote && r.dispensed_by === pharm);
+    check("調配：前端傳的時間不算，用資料庫的現在時間（不能倒填）", r.wrote && r.fresh === true);
+  }
+  {
+    await asUserPersist(c, pharm, "aal2", () =>
+      c.query("update public.clinical_records set dispensed_at = now() where id = $1", [cr[0].id]));
+    const { rows: [first] } = await c.query("select dispensed_by, dispensed_at from public.clinical_records where id = $1", [cr[0].id]);
+    const r = await writeThenInspect(c, pharm2, "aal2", {},
+      () => c.query("update public.clinical_records set dispensed_at = '2030-01-01', dispensed_by = $2 where id = $1", [cr[0].id, pharm2]),
+      async () => (await c.query("select dispensed_by, dispensed_at from public.clinical_records where id = $1", [cr[0].id])).rows[0]);
+    check("調配：已調配的紀錄，別人不能改成自己或改時間",
+      r.dispensed_by === first.dispensed_by && r.dispensed_at?.getTime() === first.dispensed_at.getTime());
+    const cancel = await writeThenInspect(c, pharm, "aal2", {},
+      () => c.query("update public.clinical_records set dispensed_at = null where id = $1", [cr[0].id]),
+      async () => (await c.query("select dispensed_by from public.clinical_records where id = $1", [cr[0].id])).rows[0]);
+    check("調配：取消調配時 dispensed_by 一起清空", cancel.wrote && cancel.dispensed_by === null);
+    await c.query("update public.clinical_records set dispensed_at = null, dispensed_by = null where id = $1", [cr[0].id]);
+  }
+
+  // ════ 2026-10：資源庫、藥物資料庫、稽核紀錄的寫入權（migration 13）══════
+  const { rows: [pubRes] } = await c.query(
+    `insert into public.pro_resources (title, category, is_public) values ('公開指引','指引',true) returning id`);
+  check("資源庫：一般註冊用戶不能改公開資源",
+    (await asUser(c, plain, "aal1", async () => {
+      try { return (await c.query("update public.pro_resources set url = 'https://evil.example' where id = $1", [pubRes.id])).rowCount; }
+      catch { return 0; }
+    })) === 0);
+  check("資源庫：醫師（aal2）也不能改別人的公開資源",
+    (await asUser(c, doctor, "aal2", async () =>
+      (await c.query("update public.pro_resources set url = 'https://evil.example' where id = $1", [pubRes.id])).rowCount)) === 0);
+  check("資源庫：一般註冊用戶不能自己發佈公開資源",
+    !(await canWrite(c, plain, "aal1", "insert into public.pro_resources (title, is_public, created_by) values ('x', true, $1)", [plain])));
+  check("資源庫：醫師（aal2）可以新增自己的私人資源",
+    await canWrite(c, doctor, "aal2", "insert into public.pro_resources (title, is_public, created_by) values ('my', false, $1)", [doctor]));
+  check("資源庫：醫師不能把資源設成公開",
+    !(await canWrite(c, doctor, "aal2", "insert into public.pro_resources (title, is_public, created_by) values ('pub', true, $1)", [doctor])));
+  check("資源庫：漏填 is_public 時預設是不公開",
+    (await asUser(c, doctor, "aal2", async () =>
+      (await c.query("insert into public.pro_resources (title, created_by) values ('d', $1) returning is_public", [doctor])).rows[0].is_public)) === false);
+  check("資源庫：管理員（aal2）可以改公開資源",
+    (await asUser(c, admin, "aal2", async () =>
+      (await c.query("update public.pro_resources set title = 'ok' where id = $1", [pubRes.id])).rowCount)) === 1);
+  check("資源庫：管理員沒過 MFA 不能改",
+    (await asUser(c, admin, "aal1", async () =>
+      (await c.query("update public.pro_resources set title = 'x' where id = $1", [pubRes.id])).rowCount)) === 0);
+  check("資源庫：展示用 admin 不能改",
+    (await asUser(c, demoAdmin, "aal2", async () =>
+      (await c.query("update public.pro_resources set title = 'x' where id = $1", [pubRes.id])).rowCount)) === 0);
+
+  const medSql = "insert into public.medications (name_zh, name_en, category, uses_zh) values ('測試藥','Testmed','測試','測試')";
+  check("藥物資料庫：管理員（aal2）可以新增", await canWrite(c, admin, "aal2", medSql));
+  check("藥物資料庫：管理員沒過 MFA 不能新增", !(await canWrite(c, admin, "aal1", medSql)));
+  check("藥物資料庫：展示用 admin 不能新增", !(await canWrite(c, demoAdmin, "aal2", medSql)));
+  check("藥物資料庫：醫師不能新增", !(await canWrite(c, doctor, "aal2", medSql)));
+
+  await c.query(`insert into public.audit_logs (actor_id, actor_email, action) values ($1, 'a@test.local', 'role_change')`, [admin]);
+  check("audit_logs：管理員（aal2）讀得到", await canSelect(c, admin, "aal2", "select 1 from public.audit_logs"));
+  check("audit_logs：展示用 admin 讀不到（裡面有真實 email）", !(await canSelect(c, demoAdmin, "aal2", "select 1 from public.audit_logs")));
+  check("audit_logs：登入者不能自己寫稽核紀錄（不能偽造）",
+    !(await canWrite(c, doctor, "aal2", "insert into public.audit_logs (actor_id, action) values ($1, 'role_change')", [doctor])));
+  check("audit_logs：沒人用的 insert_audit_log() 已移除",
+    (await c.query("select to_regprocedure('public.insert_audit_log(text,text,text,jsonb)') is null as gone")).rows[0].gone);
+
+  check("profiles：展示用 admin 只看得到自己的 profile",
+    (await asUser(c, demoAdmin, "aal2", async () => (await c.query("select 1 from public.profiles")).rowCount)) === 1);
+  check("profiles：管理員（aal2）看得到所有 profile",
+    (await asUser(c, admin, "aal2", async () => (await c.query("select 1 from public.profiles")).rowCount)) > 1);
+
+  const rateSql = "select public.check_rate_limit('gemini-clinical:someone', 0, 60)";
+  check("限流：前端登入者不能直接呼叫 check_rate_limit（不能灌爆別人的額度）", !(await canWrite(c, doctor, "aal2", rateSql)));
+  check("限流：匿名不能呼叫 check_rate_limit",
+    !(await asAnon(c, async () => { try { await c.query(rateSql); return true; } catch { return false; } })));
+
+  // ════ 2026-10：展示帳號沙盒（migration 13）════════════════════════════
+  const { rows: [demoPt] } = await c.query(
+    `insert into public.doctor_patients (doctor_id, full_name) values ($1,'Demo Patient') returning id`, [demoDoc]);
+  check("沙盒：展示護理師讀得到展示醫師的病人",
+    await canSelect(c, demoNurse, "aal1", "select 1 from public.doctor_patients where id=$1", [demoPt.id]));
+  check("沙盒：展示護理師讀不到真醫師的病人",
+    !(await canSelect(c, demoNurse, "aal1", "select 1 from public.doctor_patients where id=$1", [patientId])));
+  check("沙盒：展示 admin 讀不到真醫師的病歷",
+    !(await canSelect(c, demoAdmin, "aal1", "select 1 from public.clinical_records where id=$1", [cr[0].id])));
+  check("沙盒：展示醫師不能把病人建在真醫師名下",
+    !(await canWrite(c, demoDoc, "aal1", "insert into public.doctor_patients (doctor_id, full_name) values ($1,'x')", [doctor])));
+  check("沙盒：展示醫師照常管理自己的病人（免 MFA 不受影響）",
+    await canWrite(c, demoDoc, "aal1", "insert into public.doctor_patients (doctor_id, full_name) values ($1,'mine')", [demoDoc]));
+  check("沙盒：真的護理師（aal2）照常讀得到所有病人",
+    await canSelect(c, nurse, "aal2", "select 1 from public.doctor_patients where id=$1", [demoPt.id]));
+
   // ── replay-safety（RR12）：重跑 base 檔後，安全狀態不得還原 ────────────
   await applyAll(c, [
     "supabase/complete_setup.sql",
@@ -254,6 +458,19 @@ async function main() {
     !(await canWrite(c, pharm, "aal2", "insert into public.appointments (doctor_id) values ($1)", [doctor])));
   check("replay 後 一般用戶仍不可自我提權（R1 未被還原）",
     !(await canWrite(c, plain, "aal2", "update public.profiles set pro_role='super_admin' where id=$1", [plain])));
+  check("replay 後 一般註冊用戶仍不能改公開資源",
+    (await asUser(c, plain, "aal1", async () => {
+      try { return (await c.query("update public.pro_resources set url = 'https://evil.example' where id = $1", [pubRes.id])).rowCount; }
+      catch { return 0; }
+    })) === 0);
+  check("replay 後 展示用 admin 仍不能寫藥物資料庫", !(await canWrite(c, demoAdmin, "aal2", medSql)));
+  check("replay 後 展示用 admin 仍讀不到 audit_logs", !(await canSelect(c, demoAdmin, "aal2", "select 1 from public.audit_logs")));
+  check("replay 後 insert_audit_log() 沒有被建回來",
+    (await c.query("select to_regprocedure('public.insert_audit_log(text,text,text,jsonb)') is null as gone")).rows[0].gone);
+  check("replay 後 登入者仍不能自己寫 audit_logs",
+    !(await canWrite(c, doctor, "aal2", "insert into public.audit_logs (actor_id, action) values ($1, 'x')", [doctor])));
+  check("replay 後 使用者仍可改自己的名字（profiles policy 沒有重複或消失）",
+    await canWrite(c, plain, "aal2", "update public.profiles set name='again' where id=$1", [plain]));
 
   console.log("\n" + results.join("\n"));
   console.log(`\n${pass} passed, ${fail} failed`);
