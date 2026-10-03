@@ -27,6 +27,8 @@ export const SCHEMA_FILES = [
   "supabase/migrations/20261003_13_admin_and_demo_hardening.sql",
   "supabase/migrations/20261003_14_clinical_audit_log.sql",
   "supabase/migrations/20261003_15_dispense_attribution.sql",
+  "supabase/migrations/20261003_16_demo_data_reset.sql",
+  "supabase/migrations/20261003_17_pharmacy_queue.sql",
 ];
 
 export async function applyAll(client, files = SCHEMA_FILES) {

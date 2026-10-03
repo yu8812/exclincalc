@@ -446,6 +446,59 @@ async function main() {
   check("沙盒：真的護理師（aal2）照常讀得到所有病人",
     await canSelect(c, nurse, "aal2", "select 1 from public.doctor_patients where id=$1", [demoPt.id]));
 
+  // ════ 2026-10：展示資料每天自動重置（migration 16）═══════════════════
+  {
+    const one = async (sql, params) => (await c.query(sql, params)).rows[0];
+    const realPatients = (await one("select count(*)::int as n from public.doctor_patients where doctor_id = $1", [doctor])).n;
+    const realRecords = (await one("select count(*)::int as n from public.clinical_records where doctor_id = $1", [doctor])).n;
+    await c.query("select public.reset_demo_data()");
+    await c.query("select public.reset_demo_data()");   // 每天都會重跑，跑兩次結果要一樣
+    const today = (await one("select (now() at time zone 'Asia/Taipei')::date::text as d")).d;
+    const demo = await one(`select
+        (select count(*)::int from public.doctor_patients where doctor_id = $1) as patients,
+        (select count(*)::int from public.appointments where doctor_id = $1 and visit_date = $2::date) as appts_today,
+        (select count(*)::int from public.clinical_records where doctor_id = $1 and visit_date = $2::date and dispensed_at is null) as pending,
+        (select count(*)::int from public.clinical_records where doctor_id = $1 and dispensed_at is not null) as dispensed,
+        (select count(*)::int from public.soap_notes where doctor_id = $1) as notes,
+        (select count(*)::int from public.doctor_patients where id = $3) as visitor_patient`, [demoDoc, today, demoPt.id]);
+    check("展示重置：重建 50 位病人，今天（台灣時間）50 筆掛號", demo.patients === 50 && demo.appts_today === 50);
+    check("展示重置：藥師工作台有 3 筆待調配、2 筆已調配", demo.pending === 3 && demo.dispensed === 2);
+    check("展示重置：跑兩次也只有 5 則 SOAP 筆記，不會越疊越多", demo.notes === 5);
+    check("展示重置：訪客加進去的展示資料會被清掉", demo.visitor_patient === 0);
+    check("展示重置：真醫師的病人和病歷一筆都沒動",
+      (await one("select count(*)::int as n from public.doctor_patients where doctor_id = $1", [doctor])).n === realPatients
+      && (await one("select count(*)::int as n from public.clinical_records where doctor_id = $1", [doctor])).n === realRecords);
+  }
+  check("展示重置：前端登入者不能呼叫 reset_demo_data", !(await canWrite(c, doctor, "aal2", "select public.reset_demo_data()")));
+  check("展示重置：前端登入者不能呼叫 seed_demo_clinic", !(await canWrite(c, doctor, "aal2", "select public.seed_demo_clinic($1)", [doctor])));
+  check("展示重置：每天的排程已建立",
+    (await c.query("select count(*)::int as n from cron.job where jobname = 'reset-demo-data'")).rows[0].n === 1);
+
+  // ════ 2026-10：藥師工作台的病人姓名（migration 17）══════════════════
+  {
+    const { rows: [{ d: utcToday }] } = await c.query("select current_date::text as d");
+    await c.query(`insert into public.clinical_records (doctor_id, patient_id, visit_date, prescriptions)
+                   values ($1, $2, current_date, '[{"drug":"Panadol","dose":"500mg","frequency":"QID","route":"PO"}]')`, [doctor, patientId]);
+    const queue = (uid, aal, day) => asUser(c, uid, aal, async () => {
+      try { return (await c.query("select * from public.pharmacy_queue($1::date)", [day])).rows; } catch { return null; }
+    });
+    const pq = await queue(pharm, "aal2", utcToday);
+    check("藥師工作台：藥師（aal2）看得到處方和病人姓名",
+      Array.isArray(pq) && pq.some((r) => r.patient_name === "Test Patient" && Array.isArray(r.prescriptions)));
+    check("藥師工作台：只回姓名、性別、生日，沒有身分證和電話",
+      Array.isArray(pq) && pq.length > 0 && !("id_number" in pq[0]) && !("phone" in pq[0]) && "patient_birth_date" in pq[0]);
+    check("藥師工作台：藥師讀 doctor_patients 整張表仍然不行",
+      !(await canSelect(c, pharm, "aal2", "select 1 from public.doctor_patients where id=$1", [patientId])));
+    const pq1 = await queue(pharm, "aal1", utcToday);
+    check("藥師工作台：沒過 MFA 的藥師拿不到任何處方", Array.isArray(pq1) && pq1.length === 0);
+    const dq = await queue(doctor, "aal2", utcToday);
+    check("藥師工作台：醫師不是藥師，拿不到", Array.isArray(dq) && dq.length === 0);
+    const anonQ = await asAnon(c, async () => {
+      try { await c.query("select * from public.pharmacy_queue(current_date)"); return true; } catch { return false; }
+    });
+    check("藥師工作台：匿名不能呼叫", anonQ === false);
+  }
+
   // ── replay-safety（RR12）：重跑 base 檔後，安全狀態不得還原 ────────────
   await applyAll(c, [
     "supabase/complete_setup.sql",

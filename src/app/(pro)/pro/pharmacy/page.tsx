@@ -22,8 +22,18 @@ interface PrescriptionRecord {
   assessment: string | null;
   prescriptions: PrescriptionItem[];
   dispensed_at: string | null;
-  patient: { full_name: string } | null;
-  doctor: { full_name: string } | null;
+  patient_name: string | null;
+  patient_sex: string | null;
+  patient_birth_date: string | null;   // 交藥時核對身分用
+}
+
+const SEX_LABEL: Record<string, string> = { M: "男", F: "女", Other: "其他" };
+
+function patientIdLine(r: PrescriptionRecord): string {
+  const parts: string[] = [];
+  if (r.patient_sex) parts.push(SEX_LABEL[r.patient_sex] ?? r.patient_sex);
+  if (r.patient_birth_date) parts.push(r.patient_birth_date.replaceAll("-", "/"));
+  return parts.join("・");
 }
 
 interface PrescriptionItem {
@@ -49,6 +59,7 @@ export default function PharmacyPage() {
   const [showDispensed, setShowDispensed] = useState(false);
 
   const [dispenseError, setDispenseError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const supabase = createClient();
 
@@ -64,17 +75,11 @@ export default function PharmacyPage() {
     // 用 local date 格式（與畫面顯示一致），避免 UTC 時差導致跨日漏資料
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    // Query today's clinical records with non-empty prescriptions
-    const { data } = await supabase
-      .from("clinical_records")
-      .select("id, visit_date, chief_complaint, assessment, prescriptions, dispensed_at, patient:patient_id(full_name)")
-      .eq("visit_date", today)
-      .not("prescriptions", "eq", "[]")
-      .not("prescriptions", "is", null)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      const records = data as unknown as PrescriptionRecord[];
+    // 藥師讀不到整張病人表（有身分證、電話），所以用 pharmacy_queue() 只拿姓名、性別、生日（migration 17）
+    const { data, error } = await supabase.rpc("pharmacy_queue", { p_visit_date: today });
+    setLoadError(error ? "處方清單載入不了，請按「刷新」再試一次。" : "");
+    if (!error) {
+      const records = (data ?? []) as PrescriptionRecord[];
       setPendingRx(records.filter(r => !r.dispensed_at));
       setDispensedRx(records.filter(r => !!r.dispensed_at));
     }
@@ -98,8 +103,9 @@ export default function PharmacyPage() {
     const items = (record.prescriptions || [])
       .map(rx => `• ${rx.drug}${rx.dose ? ` ${rx.dose}` : ""} ${rx.frequency}，${rx.days ?? 7} 天`)
       .join("\n");
-    const who = record.patient?.full_name ?? "這位病人";
-    if (!confirm(`確認已經把下面的藥交給 ${who}？\n\n${items}\n\n按下確定後，系統會記錄是你在這個時間調配的。`)) return;
+    const who = record.patient_name ?? "這位病人";
+    const idLine = patientIdLine(record);
+    if (!confirm(`確認已經把下面的藥交給 ${who}${idLine ? `（${idLine}）` : ""}？\n\n${items}\n\n交藥前請先核對姓名和生日。按下確定後，系統會記錄是你在這個時間調配的。`)) return;
 
     setDispensing(record.id);
     setDispenseError("");
@@ -180,6 +186,15 @@ export default function PharmacyPage() {
             </button>
           </div>
 
+          {loadError && (
+            <div role="alert" style={{
+              marginBottom: 12, padding: "10px 14px", borderRadius: 8, fontSize: 12,
+              background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "var(--pro-danger)",
+            }}>
+              {loadError}
+            </div>
+          )}
+
           {dispenseError && (
             <div role="alert" style={{
               marginBottom: 12, padding: "10px 14px", borderRadius: 8, fontSize: 12,
@@ -212,8 +227,11 @@ export default function PharmacyPage() {
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontWeight: 700, fontSize: 14, color: "var(--pro-text)" }}>
-                          {record.patient?.full_name ?? "未知病患"}
+                          {record.patient_name ?? "未知病患"}
                         </span>
+                        {patientIdLine(record) && (
+                          <span style={{ fontSize: 12, color: "var(--pro-text-muted)" }}>{patientIdLine(record)}</span>
+                        )}
                         <span style={{
                           fontSize: 10, padding: "2px 8px", borderRadius: 10,
                           background: "rgba(245,158,11,0.15)", color: "#f59e0b", fontWeight: 600,
@@ -303,7 +321,7 @@ export default function PharmacyPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <CheckCircle size={14} color="#22c55e" />
                     <span style={{ fontWeight: 600, fontSize: 13, color: "var(--pro-text)" }}>
-                      {record.patient?.full_name ?? "—"}
+                      {record.patient_name ?? "—"}
                     </span>
                     <span style={{ fontSize: 11, color: "var(--pro-text-muted)" }}>
                       已於 {record.dispensed_at ? new Date(record.dispensed_at).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }) : "—"} 調配
