@@ -5,7 +5,7 @@
 // 2026-10-03 就是用這個方法找到 service_role_all（任何人都能讀 profiles），見 migration 10、11。
 //
 // 用法：DATABASE_URL='postgresql://…正式庫…' node scripts/schema-drift.mjs
-//   沒設 DATABASE_URL 時，會從 .env.local 讀 DATABASE_URL。
+//   沒設 DATABASE_URL 時，會從 .env.database 讀（不要放 .env.local：OpenNext 會把它打包進 worker）。
 //   本機資料庫預設 127.0.0.1:54322（supabase start），可用 LOCAL_DB_URL 覆寫。
 //
 // ⚠️ 本機資料庫的 public schema 會被整個清掉重建；正式庫只做唯讀查詢。
@@ -21,8 +21,8 @@ if (!/@(127\.0\.0\.1|localhost):/.test(LOCAL_URL)) {
 
 function liveClient() {
   let url = process.env.DATABASE_URL;
-  if (!url && existsSync(".env.local")) {
-    const line = readFileSync(".env.local", "utf8").split(/\r?\n/).find((l) => /^DATABASE_UR[LI]\s*=/i.test(l));
+  if (!url && existsSync(".env.database")) {
+    const line = readFileSync(".env.database", "utf8").split(/\r?\n/).find((l) => /^DATABASE_UR[LI]\s*=/i.test(l));
     if (line) url = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
   }
   if (!url) {

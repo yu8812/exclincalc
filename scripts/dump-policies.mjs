@@ -3,7 +3,7 @@
 //
 // 用法：DATABASE_URL='postgresql://…' node scripts/dump-policies.mjs
 //   連線字串用 Supabase 的 Session pooler（port 5432）。
-//   沒設 DATABASE_URL 時，會試著從 .env.local 讀 DATABASE_URL。
+//   沒設 DATABASE_URL 時，會從 .env.database 讀（不要放 .env.local：OpenNext 會把它打包進 worker）。
 import pg from "pg";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
@@ -13,8 +13,8 @@ const END = "<!-- 產生結束 -->";
 
 function connectionUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  if (!existsSync(".env.local")) return null;
-  const line = readFileSync(".env.local", "utf8").split(/\r?\n/).find((l) => /^DATABASE_UR[LI]\s*=/i.test(l));
+  if (!existsSync(".env.database")) return null;
+  const line = readFileSync(".env.database", "utf8").split(/\r?\n/).find((l) => /^DATABASE_UR[LI]\s*=/i.test(l));
   return line ? line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "") : null;
 }
 

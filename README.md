@@ -232,6 +232,8 @@ GEMINI_API_KEY=YOUR_GEMINI_KEY
 ```
 
 > ⚠️ `.env.local` 已列入 `.gitignore`。`SUPABASE_SERVICE_ROLE_KEY` 繞過 RLS，**僅可在伺服器端使用**。
+>
+> ⚠️ `.env.local` 只放上面四個。OpenNext 建置時會把 `.env.local` 的變數打包進 worker，所以資料庫連線字串（維護腳本 `scripts/*.mjs` 才需要）另外放在 `.env.database` 的 `DATABASE_URL`，同樣不進版控。
 
 ### Seed SQL 內的 Email 替換
 
