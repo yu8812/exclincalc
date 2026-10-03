@@ -5,13 +5,13 @@
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript)
-![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2037-336791?logo=postgresql)
+![PostgreSQL RLS](https://img.shields.io/badge/PostgreSQL-RLS%20%C3%97%2042-336791?logo=postgresql)
 ![TOTP MFA](https://img.shields.io/badge/Auth-TOTP%20MFA-success)
 ![STRIDE](https://img.shields.io/badge/Security-STRIDE--analyzed-darkred)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-🔒 **完整威脅模型分析**（28 個威脅、6 個 STRIDE 類別、已公開）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+🔒 **威脅模型**（STRIDE，30 個威脅，每一列都寫實際做到哪裡、還缺什麼）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
 
 ![Doctor Dashboard](assets/01-doctor-dashboard.png)
 
@@ -31,9 +31,10 @@ ExClinCalc Pro 是針對基層診所工作流程設計的醫師臨床決策支�
 ExClinCalc 的設計回應這兩個限制：
 
 - **完整工作流程閉環**：不是只做病歷編輯器，是**掛號 → 分診 → SOAP → 處方 → 調配**五個環節都做，反映真實診所運作
-- **資料庫層權限控制**：透過 PostgreSQL Row Level Security（**37 條 policy，含 6 條 RESTRICTIVE AAL2 閘門**），即使前端程式有漏洞，跨使用者資料也不會被讀走
-- **TOTP 強制 MFA**：所有醫事人員角色強制雙重驗證，且實作 5 次失敗鎖定
-- **AI 為提示而非決策**：Gemini 用於 SOAP A/P 段建議、藥物交互敘述生成，最終決策仍由醫師按下「確認」
+- **資料庫層權限控制**：透過 PostgreSQL Row Level Security（**42 條 policy**，其中 6 條 RESTRICTIVE 閘門要求 MFA、8 條把展示帳號關在展示資料裡），即使前端程式有漏洞，跨使用者資料也不會被讀走
+- **TOTP 強制 MFA**：所有醫事人員帳號都要綁兩步驟驗證，沒過 MFA 的登入讀不到病人資料
+- **病歷異動留紀錄**：病歷和 SOAP 筆記每次新增、修改、刪除，都由資料庫 trigger 記下改前改後的內容和操作者
+- **AI 為提示而非決策**：Gemini 用於 SOAP A/P 段建議、藥物交互敘述生成；SOAP 筆記裡的 AI 建議要醫師自己按「加到評估欄」才會寫進去
 
 目標：**作為基層診所資訊化的參考實作**，並在合理的安全與合規前提下，展示 AI 整合進醫療工作流程的具體做法。
 
@@ -47,7 +48,7 @@ ExClinCalc 的設計回應這兩個限制：
 | 護理師分診工作台 | 藥師調配工作台 |
 |:---:|:---:|
 | ![Nursing](assets/04-nurse-triage.png) | ![Pharmacy](assets/05-pharmacy-dispensing.png) |
-| 7 項生命徵象結構化輸入，醫師端可一鍵帶入 | 處方調配確認、預計使用天數計算、雙層交互檢查 |
+| 7 項生命徵象結構化輸入，醫師端可一鍵帶入 | 調配前確認病人與藥品、由資料庫記錄調配者與時間 |
 
 ![Admin Analytics](assets/06-admin-analytics.png)
 *管理者分析儀表板：平台使用統計、用戶活躍度、處方分布等指標*
@@ -63,7 +64,7 @@ ExClinCalc 的設計回應這兩個限制：
 | 藥師 (pharmacist) | `demo-pharmacist@example.com` | `demo1234` |
 | 管理員 (admin) | `demo-admin@example.com` | `demo1234` |
 
-> **Demo 帳號免 MFA**：這些帳號標記 `is_demo=true`，於 DB 層（RLS）與 App 層皆豁免 TOTP 驗證，可直接登入體驗，無需綁定驗證器。**真實帳號仍全面強制 MFA**（見「安全性設計」）。一般醫事帳號首次登入會被導至 `/pro/security` 以 Google Authenticator 掃 QR 完成 TOTP 綁定。
+> **Demo 帳號免 MFA**：這些帳號標記 `is_demo=true`，在資料庫（RLS）和網站都不用 TOTP，可以直接登入體驗。因為帳密是公開的，它們被限制在展示資料裡：資料庫對每張含病人資料的表都加了 RESTRICTIVE policy，展示帳號只碰得到展示帳號擁有的資料；展示用 admin 只能瀏覽，不能改帳號、藥物資料庫或資源庫，也讀不到稽核紀錄。**真實帳號仍全面強制 MFA**，首次登入會被導到 `/pro/security` 用 Google Authenticator 掃 QR 綁定。
 
 ## 核心模組（六種角色）
 
@@ -71,10 +72,10 @@ ExClinCalc 的設計回應這兩個限制：
 |---|---|---|
 | 醫師 (doctor) | `/pro/dashboard`、`/pro/encounter`、`/pro/patients` | 儀表板、SOAP 七步驟診療、病患管理、ICD-10 自動建議 |
 | 護理師 (nurse) | `/pro/nursing` | 分診工作台、輸入 7 項生命徵象 → 醫師端可一鍵帶入 |
-| 藥師 (pharmacist) | `/pro/pharmacy` | 處方調配、修改處方、預計使用天數、雙層藥物交互檢查 |
-| 行政 (admin_staff) | 共用使用者管理頁面 | profiles 唯讀（限同診所），由 RLS 自動過濾 |
-| 管理員 (admin) | `/pro/admin/*`、`/pro/analytics` | 帳號管理、藥物 DB CRUD、健康記錄總覽、使用統計 |
-| 超級管理員 (super_admin) | 同 admin | 同 admin 並可寫入醫療參考值 |
+| 藥師 (pharmacist) | `/pro/pharmacy` | 處方調配（不能改醫師開的處方，有疑問要回頭問醫師）、藥物交互檢查 |
+| 行政 (admin_staff) | `/pro/appointments`、`/pro/patients` | 掛號管理、查看病人和病歷（不能寫病歷）|
+| 管理員 (admin) | `/pro/admin/*`、`/pro/analytics` | 帳號管理、藥物資料庫與參考值維護、健康記錄總覽、使用統計 |
+| 超級管理員 (super_admin) | 同 admin | 同 admin，另外可以處理其他管理員的帳號、指派管理員角色 |
 
 ## 技術棧
 
@@ -83,7 +84,7 @@ ExClinCalc 的設計回應這兩個限制：
 - **Supabase**（PostgreSQL + Auth + RLS + TOTP MFA）
 - **Google Gemini 2.5 Flash**（鑑別診斷、藥物交互敘述、SOAP A/P 段輔助）
 - **Cloudflare Workers**（OpenNext for Cloudflare 轉接器，全球邊緣節點）
-- **GitHub Actions**（自動部署、月度參考值同步、Supabase keep-alive）
+- **GitHub Actions**（每次 push 跑型別檢查、單元測試和 95 條 RLS 整合測試；定期喚醒 Supabase）
 
 ## 系統架構
 
@@ -97,11 +98,11 @@ graph TB
     Auth -->|JWT + aal2| Middleware[Next.js Middleware<br/>路由保護 /pro/*]
     Middleware --> Routes[6 角色 RBAC<br/>分流到對應工作台]
 
-    Routes -->|讀寫| RLS[37 條 RLS Policy<br/>含 6 條 RESTRICTIVE AAL2 閘門]
+    Routes -->|讀寫| RLS[42 條 RLS Policy<br/>6 條 MFA 閘門 + 8 條展示帳號沙盒]
     RLS --> DB[(PostgreSQL)]
-    RLS -.->|trigger| AuditLog[(audit_logs<br/>稽核軌跡)]
+    DB -.->|trigger| AuditLog[(clinical_audit_log<br/>病歷異動稽核)]
 
-    Routes -->|代理呼叫| GeminiProxy[/api/pro/gemini-clinical<br/>30 req/min/IP]
+    Routes -->|代理呼叫| GeminiProxy[/api/pro/gemini-clinical<br/>每人每分鐘 30 次/]
     GeminiProxy --> Gemini[Google Gemini 2.5 Flash<br/>SOAP 輔助 / 鑑別診斷]
 
     Routes -->|靜態規則檢查| DrugDB[(藥物交互<br/>12 組關鍵組合)]
@@ -115,18 +116,18 @@ graph TB
 ```
 
 **設計重點**：
-- 🔴 **資料庫層權限**（RLS）── 即使應用層被攻破，攻擊者也只能看到該角色 RLS 允許的資料
-- 🟡 **TOTP 強制 MFA** ── 所有 pro 角色登入必過二階驗證，5 次失敗鎖定 15 分鐘
-- 🟢 **稽核軌跡** ── 所有敏感操作自動寫 audit_logs，保留 90 天
-- 🟠 **AI 為輔** ── Gemini 只生成「醫師可確認的建議」，最終決策仍是醫師按下確認
+- 🔴 **資料庫層權限**（RLS）── 前端或 API 的檢查被繞過，資料庫照樣只給該角色允許的資料（前提是攻擊者拿不到伺服器上的 service role key，見 THREAT_MODEL E4）
+- 🟡 **TOTP 強制 MFA** ── 所有 pro 帳號都要綁；病人資料要求這次登入有過 MFA
+- 🟢 **稽核** ── 病歷和 SOAP 筆記的每次異動由 trigger 寫進 `clinical_audit_log`；管理員的帳號操作寫進 `audit_logs`。兩者都沒有自動清除
+- 🟠 **AI 為輔** ── Gemini 只給建議，要醫師自己決定要不要採用
 
 ## 安全性設計
 
 ### 1. PostgreSQL Row Level Security（核心防線）
 
-兩個子系統共用同一份 PostgreSQL，**37 條 RLS policy**：權限檢查不寫在後端程式裡，而是直接由 PostgreSQL 在執行查詢前比對 JWT 與 policy。即使前端程式有漏洞，跨使用者資料也不會被讀走。
+兩個子系統共用同一份 PostgreSQL，**42 條 RLS policy**：權限檢查不只寫在後端程式裡，而是由 PostgreSQL 在執行查詢時比對 JWT 和 policy。瀏覽器會直接打 Supabase 的 API，所以這一層才是真正的邊界。
 
-安全狀態由 8 個 forward migration 逐步建構（`supabase/migrations/`，見該資料夾 README）：角色權限授權與欄位級 REVOKE（01）、同意書完整性（02、06）、PHI 全域 AAL2（03、04）、**6 張純醫事表的 RESTRICTIVE AAL2 閘門**（05，與 permissive policy 做 AND，確保 MFA 無法被繞過）、角色能力矩陣（07，藥師只能配藥、護理師寫／醫師讀 triage）、Demo 帳號豁免（08）。基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql)。
+安全狀態由 15 個 forward migration 逐步建構（`supabase/migrations/`，見該資料夾 README）：角色權限與欄位級 REVOKE（01）、同意書完整性（02、06）、病人資料要求 MFA（03、04）、**6 張純醫事表的 RESTRICTIVE MFA 閘門**（05，和 permissive policy 做 AND，繞不過）、角色能力矩陣（07）、展示帳號免 MFA（08）、policy 清理（09）、2026-10 的稽核修補（10–15：profiles 外洩、與正式庫對齊、限流、管理權收緊和展示帳號沙盒、病歷異動稽核、調配蓋章）。每支都有 RLS 整合測試（目前 95 條）。基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql)。
 
 **設計亮點**：PERMISSIVE + RESTRICTIVE 組合把 AAL2 以 AND 硬性套上；SECURITY DEFINER helper + `set search_path` 消除 policy 自我參照的無限遞迴；欄位級授權讓 `is_pro` / `pro_role` / `is_demo` 無法被使用者自行修改。
 
@@ -137,13 +138,16 @@ ExClinCalc 對所有 `pro` 角色強制啟用 TOTP：
 - **首次登入**：[`/auth/login`](src/app/auth/login/page.tsx) 偵測 `nextLevel === "aal1"` 且 user 為 pro → 引導至 [`/pro/security?firstLogin=true`](src/app/(pro)/pro/security/page.tsx) 完成 enroll
 - **每次後續登入**：[`/auth/login`](src/app/auth/login/page.tsx) 偵測 `nextLevel === "aal2"` 且當前 session `currentLevel !== "aal2"` → 跳 [`/auth/mfa-verify`](src/app/auth/mfa-verify/page.tsx) 輸入 6 位數動態碼
 - **路由保護**：[`src/middleware.ts`](src/middleware.ts) 對所有 `/pro/*` 路由要求 aal2，未通過自動 redirect mfa-verify
-- **5 次失敗鎖定**：mfa-verify 頁以 `sessionStorage` 計數，連續 5 次失敗鎖定 15 分鐘
+- **輸錯 5 次暫停 15 分鐘**：計數存在瀏覽器的 `sessionStorage`，只能擋手誤、拖慢速度，不是伺服器端的帳號鎖定（Supabase Auth 另有自己的頻率限制）
 
 實作 API：`supabase.auth.mfa.enroll / challenge / verify / unenroll / listFactors / getAuthenticatorAssuranceLevel`
 
-### 3. 稽核日誌
+### 3. 稽核
 
-`audit_logs` 表記錄登入、處方建立、SOAP 修改、藥物交互查詢、未授權嘗試等敏感操作，由 Supabase trigger 自動寫入；保留 90 天供管理員稽核。
+- **`clinical_audit_log`**（migration 14）：`clinical_records`、`soap_notes` 每次新增、修改、刪除，由資料庫 trigger 記下改前改後的整筆內容、操作者、當下角色、IP、瀏覽器。稽核寫不進去時，原本的修改也會一起失敗。沒有任何寫入 policy，只能從 trigger 進來；只有通過 MFA 的管理員讀得到。
+- **`audit_logs`**：管理員對帳號的操作（改角色、重設密碼、重設 MFA、刪除帳號），只由伺服器寫入。
+- **調配紀錄**（migration 15）：藥師按「完成調配」時，調配者和時間由資料庫決定，之後不能再改。
+- 沒有保留期限也沒有自動清除；「誰讀了病歷」目前沒有記錄（見 THREAT_MODEL R3）。
 
 ### 4. API 金鑰管理
 
@@ -171,7 +175,8 @@ npm install
 # 2. 建立 .env.local（範本見下方）
 
 # 3. 初始化資料庫：在 Supabase SQL Editor 依序執行
-#    supabase/complete_setup.sql       (基礎 schema：10 張表 + 基礎 RLS；跑完下方 migrations 後最終為 13 表 / 37 policy)
+#    supabase/complete_setup.sql       (基礎 schema：10 張表 + 基礎 RLS；跑完下方 migrations 後和正式庫一樣是 15 表 / 42 policy，
+#                                       另外會多一張正式庫沒有建的 reference_pdf_links)
 #    supabase/clinic_flow.sql          (擴充處方欄位 + 補 RLS)
 #    supabase/create_patient_consents.sql
 #    supabase/create_reference_pdf_links.sql
@@ -180,7 +185,7 @@ npm install
 #    supabase/seed_50_patients.sql     (選用：50 名模擬病患)
 #    supabase/seed_today_workload.sql  (選用：今日掛號/SOAP/處方資料)
 #
-# 3b. ★ 安全 migrations（必跑，依序 01→08）— 讓 fresh install 與正式環境得到相同的安全狀態：
+# 3b. ★ 安全 migrations（必跑，依序 01→15）— 讓 fresh install 與正式環境得到相同的安全狀態：
 #    01_role_authority              角色權限授權 + 欄位級 REVOKE + 防自我提權 trigger
 #    02_consent_integrity           同意書欄位/policy/atomic token
 #    03_phi_aal2_consent_hardening  PHI 讀取要求 AAL2 + 拒匿名 + 反遞迴 helper
@@ -189,7 +194,13 @@ npm install
 #    06_consent_deletion_lifecycle  同意書刪除生命週期 trigger + 單一有效授權唯一索引
 #    07_role_capability_matrix      角色能力矩陣（藥師配藥、護理師寫/醫師讀 triage）
 #    08_demo_aal2_exemption         demo 帳號豁免 AAL2（僅合成資料）
-#    supabase/rate_limits.sql       持久化限流表 + RPC
+#    09_policy_cleanup              刪掉重複和沒在用的 policy
+#    10_profiles_exposure_fix       修掉任何人都能讀 profiles 的舊 policy
+#    11_schema_drift_sync           profiles policy 與正式庫對齊
+#    12_rate_limits                 持久化限流表 + check_rate_limit（只限伺服器呼叫）
+#    13_admin_and_demo_hardening    管理權要求 MFA 且排除展示帳號、資源庫寫入修補、展示帳號沙盒
+#    14_clinical_audit_log          病歷與 SOAP 筆記異動稽核
+#    15_dispense_attribution        調配者與調配時間由資料庫決定
 #          ⚠️ 前提：03–05 對 PHI 強制 AAL2，套用「前」所有非 demo 的 pro 帳號必須先 enroll+challenge MFA
 #             取得 aal2，否則會失去病歷存取。順序：先綁 MFA → 再套 migration。
 #    ⚠️ pro_schema.sql 與 scripts/run-schema.mjs 已 DEPRECATED（勿執行；會撤銷 migration 04）。
@@ -241,15 +252,15 @@ npx wrangler deploy       # 部署到 Cloudflare Workers
 
 DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transaction 套用（見 `supabase/migrations/README.md`）。
 
-> `.github/workflows/` 內含 `deploy.yml` 等自動化，為舊 CI 設定；遷移到 yu8812 帳號後目前以本機 wrangler 為主。
+> GitHub Actions 的 `deploy.yml` 需要 `CLOUDFLARE_API_TOKEN` secret，目前沒有設定，所以改成只能手動觸發；實際部署用上面的本機 wrangler。
 
 ## 主要 API 路由
 
 | 路由 | 方法 | 功能 |
 |---|---|---|
-| `/api/pro/gemini-clinical` | POST | 醫師助手模式 Gemini 呼叫（含速率限制 30 req/min/IP） |
+| `/api/pro/gemini-clinical` | POST | 醫師助手模式 Gemini 呼叫（每人每分鐘 30 次；展示帳號共用每分鐘 10 次、每天 100 次）|
 | `/api/pro/drug-interactions` | POST | 多藥物交互作用分析（靜態表 + medications.interactions[]） |
-| `/api/pro/analytics` | GET | 平台統計數據（需 is_pro） |
+| `/api/pro/analytics` | GET / POST | 平台統計（管理員；展示 admin 只看到展示資料）／ AI 摘要 |
 | `/api/pro/admin/*` | POST/PUT/DELETE | 資料表 CRUD（白名單限 medications/medical_references） |
 | `/api/pro/consent/invite` | POST | 產生 patient_consents 一次性權杖 |
 | `/api/ping` | GET | Supabase 健康檢查（供 keep-alive workflow） |
@@ -258,10 +269,11 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 
 | Workflow | 觸發 | 功能 |
 |---|---|---|
-| `deploy.yml` | push main | 自動部署到 Cloudflare Workers |
-| `keep-alive.yml` | 每 3 天 16:00 (台灣時間) | Ping Worker `/api/ping` |
-| `sync-references.yml` | 每月 1 日 08:00 | 同步參考值到 `medical_references` |
-| `check-versions.yml` | 每月 1 日 08:30 | 檢查 KDIGO/ADA/ACC-AHA 等指引是否有新版 |
+| `ci.yml` | push、PR | 型別檢查 + 單元測試 + RLS 整合測試（每次在一次性的本機 Supabase 上跑）|
+| `keep-alive.yml` | 每天 16:00（台灣時間）| Ping Worker `/api/ping`，避免 Supabase 免費專案閒置被暫停 |
+| `deploy.yml` | 手動 | 部署到 Cloudflare Workers（需要 `CLOUDFLARE_API_TOKEN`）|
+| `sync-references.yml` | 手動 | 同步參考值到 `medical_references`（需要 service role secret）|
+| `check-versions.yml` | 手動 | 檢查 KDIGO／ADA／ACC-AHA 等指引是否有新版（需要 service role secret 和 `reference_pdf_links` 表）|
 
 ## 程式碼導覽（給審查者）
 
@@ -269,13 +281,14 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 
 | 想看什麼 | 看哪個檔 |
 |---|---|
-| 權威 RLS 清單（13 表 / 37 policy，線上實測）| [`docs/permission-matrix.md`](docs/permission-matrix.md)；基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql) |
+| RLS 權限矩陣（15 表 / 42 policy，附錄由腳本從正式庫產生）| [`docs/permission-matrix.md`](docs/permission-matrix.md)；基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql) |
 | TOTP 兩階段強制流程 | [`src/middleware.ts`](src/middleware.ts) + [`src/app/auth/login/page.tsx`](src/app/auth/login/page.tsx) + [`src/app/auth/mfa-verify/page.tsx`](src/app/auth/mfa-verify/page.tsx) |
 | 醫師 SOAP 七步驟 + 20 種主訴模板 | [`src/app/(pro)/pro/encounter/`](src/app/(pro)/pro/encounter/) |
 | 藥物交互即時警示（12 組） | [`src/app/api/pro/drug-interactions/`](src/app/api/pro/drug-interactions/) |
-| Gemini 後端代理（含速率限制 30 req/min/IP） | [`src/app/api/pro/gemini-clinical/`](src/app/api/pro/gemini-clinical/) |
+| Gemini 後端代理（依使用者限流） | [`src/app/api/pro/gemini-clinical/`](src/app/api/pro/gemini-clinical/) |
 | 6 角色 RBAC 路由保護 | [`src/middleware.ts`](src/middleware.ts) |
-| 稽核軌跡 trigger 設定 | [`supabase/`](supabase/) 內 audit_logs 相關 SQL |
+| 病歷異動稽核 trigger | [`supabase/migrations/20261003_14_clinical_audit_log.sql`](supabase/migrations/20261003_14_clinical_audit_log.sql) |
+| RLS 整合測試（95 條）| [`supabase/tests/rls_matrix.mjs`](supabase/tests/rls_matrix.mjs) |
 | CI/CD（部署 + 月度同步 + keep-alive + 版本檢查） | [`.github/workflows/`](.github/workflows/) |
 
 ## 從實作中發現的研究問題
@@ -283,7 +296,7 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 完成 ExClinCalc 後，我整理出三個值得深入研究的方向，作為碩士階段研究計畫的延伸：
 
 1. **多租戶醫療系統的 RLS 設計方法論**
-   我用 37 條 RLS policy 取代應用層權限，但這個設計**沒有系統化的設計方法論**。每次加新表都要思考「policy 怎麼寫」，容易遺漏或不一致。**怎麼從業務需求自動推導出 RLS policy 草稿？怎麼形式化驗證 policy 的完整性？** 這是值得學界研究的問題。
+   我用 42 條 RLS policy 把權限放在資料庫層，但這個設計**沒有系統化的方法**。每次加新表都要自己想「policy 怎麼寫」，很容易遺漏或不一致。2026 年 10 月我寫腳本比對正式庫和 repo，就發現有 policy 只存在正式庫、沒有進版控，還有一條讓任何登入者都能改寫資源庫的 policy —— 這些都通過了原本的測試。**怎麼從業務需求推導出 policy 草稿？怎麼驗證 policy 的完整性，並偵測正式環境和版控之間的漂移？** 是我想深入的問題。
 
 2. **LLM 安全嵌入 SOAP 工作流程的分級架構**
    ExClinCalc 目前讓 Gemini 輔助 SOAP 的 A（Assessment）、P（Plan）兩段，但**沒有量化評估幻覺率與覆蓋率的取捨**。我的「先規則後 LLM」策略在 KDIGO 分期、藥物交互這類有明確規則的場景運作良好，但在「鑑別診斷」這類本質模糊的場域有限制。**怎麼設計分級的 LLM 介入比例？怎麼量化評估？** 是值得研究的問題。
