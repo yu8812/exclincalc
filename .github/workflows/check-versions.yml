@@ -1,20 +1,22 @@
 name: Check Clinical Reference Versions
 
-# 每月 1 日 08:30 台灣時間執行（sync-references 之後 30 分鐘）
+# 檢查 KDIGO / ADA / ACC-AHA 等指引有沒有新版，結果寫進 reference_pdf_links。
+# 需要：repo secrets NEXT_PUBLIC_SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY，
+#       以及正式庫裡的 reference_pdf_links 表（supabase/create_reference_pdf_links.sql，目前還沒建）。
+# 條件都還沒備齊，所以先改成手動觸發（原本每月 1 日自動跑，但一直失敗）。
 on:
-  schedule:
-    - cron: '30 0 1 * *'   # UTC 00:30 = 台灣 08:30
-  workflow_dispatch:         # 允許手動觸發
+  workflow_dispatch:
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -24,7 +26,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: node scripts/check-versions.mjs
-
-      - name: Notify on new versions found
-        if: failure()
-        run: echo "Version check failed - check logs"

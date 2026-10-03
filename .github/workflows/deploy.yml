@@ -1,16 +1,18 @@
 name: Deploy to Cloudflare Workers
 
+# 目前用本機 wrangler 部署（見 README「部署到 Cloudflare Workers」）。
+# 這個 workflow 需要 repo secrets：CLOUDFLARE_API_TOKEN、NEXT_PUBLIC_SUPABASE_URL、NEXT_PUBLIC_SUPABASE_ANON_KEY。
+# 還沒設定 CLOUDFLARE_API_TOKEN，所以先改成只能手動觸發，避免每次 push 都失敗。
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'

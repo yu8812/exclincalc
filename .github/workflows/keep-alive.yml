@@ -18,7 +18,7 @@ jobs:
       - name: Ping Worker /api/ping (dependency chain)
         run: |
           code=$(curl -s -o /tmp/ping.json -w "%{http_code}" \
-            https://exclincalc.ro883c.workers.dev/api/ping || echo 000)
+            https://exclincalc.yuyulsc881209.workers.dev/api/ping || echo 000)
           echo "worker /api/ping -> $code"
           cat /tmp/ping.json 2>/dev/null || true
 

@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: 型別檢查 + 單元測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  rls:
+    name: RLS 整合測試（一次性的本機 Supabase）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      # 在 repo 外面另開一個空的 Supabase 專案，只起資料庫、Auth、API gateway（健康檢查要用）；
+      # 測試會清空它的 public schema，再依序套用 base schema 和全部 migration。
+      - name: 啟動本機 Supabase
+        run: |
+          mkdir -p "$RUNNER_TEMP/rls-db"
+          supabase init --workdir "$RUNNER_TEMP/rls-db"
+          supabase start --workdir "$RUNNER_TEMP/rls-db" \
+            -x edge-runtime,imgproxy,logflare,mailpit,postgres-meta,realtime,storage-api,studio,supavisor,vector
+      - run: npm run test:rls
