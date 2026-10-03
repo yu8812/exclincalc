@@ -9,19 +9,19 @@
 --   ❌ 安全破洞 → 跳出紅色錯誤：SECURITY FAIL: ...（提權沒被擋，請回報）
 --   測試最後 rollback，不改動任何資料。
 --
--- 註：<UID> 已填為一般用戶 william881207063@gmail.com（is_pro=false）。
---     若要測其他帳號，替換下方 v_uid 與 request.jwt.claims 的 sub 即可。
+-- 註：執行前把下面兩處 <一般用戶的 UID> 換成一個 is_pro = false 的一般用戶 id
+--     （Supabase → Authentication → Users 查得到）。沒換的話會直接報錯，不會誤判成通過。
 -- ═══════════════════════════════════════════════════════════════════
 
 begin;
 
 -- 模擬該用戶的 authenticated session
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"42bdd433-3123-40be-b19c-f5189706da72","role":"authenticated"}';
+set local request.jwt.claims = '{"sub":"<一般用戶的 UID>","role":"authenticated"}';
 
 do $$
 declare
-  v_uid uuid := '42bdd433-3123-40be-b19c-f5189706da72';
+  v_uid uuid := '<一般用戶的 UID>';
   v_blocked boolean;
   v_role_before text;
   v_role_after text;
