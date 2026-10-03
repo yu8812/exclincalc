@@ -8,9 +8,9 @@
 | `clinic_flow.sql` | 診所流程擴充（處方欄位等） |
 | `create_patient_consents.sql` | 病患同意書表 |
 | `create_reference_pdf_links.sql` | 指引 PDF 版本追蹤表（正式庫目前沒有建）|
-| `seed_*.sql` | 選用示範資料（藥物、病患、今日工作量…） |
-| `migrations/` | **15 個安全 forward migration**（RLS、MFA、角色矩陣、稽核、限流）— 見該資料夾 README |
-| `tests/` | RLS 整合測試（95 條，跑在一次性的本機 Supabase）— 見該資料夾 README |
+| `seed_*.sql` | 選用示範資料（藥物、參考資源、示範門診）；`seed_50_patients.sql` 要在 migrations 之後跑 |
+| `migrations/` | **17 個 forward migration**：01–15 是安全相關（RLS、MFA、角色矩陣、稽核、限流），16 是展示資料每天重置，17 是藥師工作台的病人姓名 — 見該資料夾 README |
+| `tests/` | RLS 整合測試（109 條，跑在一次性的本機 Supabase）— 見該資料夾 README |
 
 ⚠️ `pro_schema.sql` 與 `scripts/run-schema.mjs` 已 DEPRECATED（會撤銷 migration 04，勿執行）。正式 schema = `complete_setup.sql` + `migrations/`。
 

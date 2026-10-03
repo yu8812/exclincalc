@@ -1,6 +1,6 @@
 # `supabase/migrations/` — 安全性 forward migrations
 
-15 個依序套用的 migration，把資料庫從「基礎 RLS」一步步收緊。每一支都可以重跑（`drop ... if exists`、`create or replace`），也都有 RLS 整合測試（`../tests/rls_matrix.mjs`，目前 95 條）。
+17 個依序套用的 migration：01–15 把資料庫從「基礎 RLS」一步步收緊，16 讓展示資料每天自動重置，17 讓藥師工作台看得到病人姓名。每一支都可以重跑（`drop ... if exists`、`create or replace`），也都有 RLS 整合測試（`../tests/rls_matrix.mjs`，目前 109 條）。
 
 | # | 檔案 | 主題 |
 |---|---|---|
@@ -19,6 +19,8 @@
 | 13 | `admin_and_demo_hardening` | 管理權要求 MFA 且排除展示帳號；資源庫只有管理員能改公開資源；8 張表加展示帳號沙盒 |
 | 14 | `clinical_audit_log` | 病歷與 SOAP 筆記每次異動由 trigger 寫進 `clinical_audit_log` |
 | 15 | `dispense_attribution` | 調配者與調配時間由資料庫決定，調配後不能改 |
+| 16 | `demo_data_reset` | 展示資料每天台灣時間 00:01 自動重置（pg_cron）；只動展示帳號名下的資料 |
+| 17 | `pharmacy_queue` | 藥師讀不到病人表，工作台一直顯示「未知病患」；改用函式只回傳當天處方的病人姓名、性別、生日 |
 
 10–15 是 2026-10-03 一次稽核的結果：用腳本比對正式庫和 repo、再用不同身分逐表實測讀改刪，找到的問題和修法都寫在各檔案開頭的註解裡。
 

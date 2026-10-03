@@ -7,7 +7,6 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 //
 // 需在 Supabase Dashboard 的 Confirm signup email template 指向此路由：
 //   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email
-// （見 docs/audit/handoffs/SEC-001b-auth-operations-evidence.md）
 
 function safeNext(raw: string | null): string | null {
   if (!raw) return null;

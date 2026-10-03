@@ -36,6 +36,7 @@
 | **drug_interaction_checks** | ✓ 全部（自己的）| ✕ | ✓ 全部 | ✕ | ✓ 全部 | ✓ 全部 |
 
 - 藥師對 clinical_records 只能改 `dispensed_at`／`dispensed_by`，改其他欄位會被 trigger 擋下（migration 07）；這兩個欄位的值也由資料庫決定（migration 15）。
+- 藥師讀不到 doctor_patients（裡面有身分證、電話）；藥師工作台改用 `pharmacy_queue()` 取得當天處方，加上病人的姓名、性別、生日（migration 17）。
 - clinical_records、soap_notes 每次新增、修改、刪除都會由 trigger 寫一筆 `clinical_audit_log`（migration 14）。
 
 ### B. 共用表

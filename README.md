@@ -65,7 +65,7 @@ ExClinCalc 的設計回應這兩個限制：
 | 藥師 (pharmacist) | `demo-pharmacist@example.com` | `demo1234` |
 | 管理員 (admin) | `demo-admin@example.com` | `demo1234` |
 
-> **Demo 帳號免 MFA**：這些帳號標記 `is_demo=true`，在資料庫（RLS）和網站都不用 TOTP，可以直接登入體驗。因為帳密是公開的，它們被限制在展示資料裡：資料庫對每張含病人資料的表都加了 RESTRICTIVE policy，展示帳號只碰得到展示帳號擁有的資料；展示用 admin 只能瀏覽，不能改帳號、藥物資料庫或資源庫，也讀不到稽核紀錄。**真實帳號仍全面強制 MFA**，首次登入會被導到 `/pro/security` 用 Google Authenticator 掃 QR 綁定。
+> **Demo 帳號免 MFA**：這些帳號標記 `is_demo=true`，在資料庫（RLS）和網站都不用 TOTP，可以直接登入體驗。因為帳密是公開的，它們被限制在展示資料裡：資料庫對每張含病人資料的表都加了 RESTRICTIVE policy，展示帳號只碰得到展示帳號擁有的資料；展示用 admin 只能瀏覽，不能改帳號、藥物資料庫或資源庫，也讀不到稽核紀錄。**真實帳號仍全面強制 MFA**，首次登入會被導到 `/pro/security` 用 Google Authenticator 掃 QR 綁定。展示資料每天台灣時間 00:01 自動重置（訪客改過、刪過的都會還原，日期也會換成當天）。
 
 ## 核心模組（六種角色）
 
@@ -85,7 +85,7 @@ ExClinCalc 的設計回應這兩個限制：
 - **Supabase**（PostgreSQL + Auth + RLS + TOTP MFA）
 - **Google Gemini 2.5 Flash**（鑑別診斷、藥物交互敘述、SOAP A/P 段輔助）
 - **Cloudflare Workers**（OpenNext for Cloudflare 轉接器，全球邊緣節點）
-- **GitHub Actions**（每次 push 跑型別檢查、單元測試和 95 條 RLS 整合測試；定期喚醒 Supabase）
+- **GitHub Actions**（每次 push 跑型別檢查、單元測試和 109 條 RLS 整合測試；定期喚醒 Supabase）
 
 ## 系統架構
 
@@ -128,7 +128,7 @@ graph TB
 
 兩個子系統共用同一份 PostgreSQL，**42 條 RLS policy**：權限檢查不只寫在後端程式裡，而是由 PostgreSQL 在執行查詢時比對 JWT 和 policy。瀏覽器會直接打 Supabase 的 API，所以這一層才是真正的邊界。
 
-安全狀態由 15 個 forward migration 逐步建構（`supabase/migrations/`，見該資料夾 README）：角色權限與欄位級 REVOKE（01）、同意書完整性（02、06）、病人資料要求 MFA（03、04）、**6 張純醫事表的 RESTRICTIVE MFA 閘門**（05，和 permissive policy 做 AND，繞不過）、角色能力矩陣（07）、展示帳號免 MFA（08）、policy 清理（09）、2026-10 的稽核修補（10–15：profiles 外洩、與正式庫對齊、限流、管理權收緊和展示帳號沙盒、病歷異動稽核、調配蓋章）。每支都有 RLS 整合測試（目前 95 條）。基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql)。
+安全狀態由 15 個 forward migration 逐步建構（`supabase/migrations/`，見該資料夾 README）：角色權限與欄位級 REVOKE（01）、同意書完整性（02、06）、病人資料要求 MFA（03、04）、**6 張純醫事表的 RESTRICTIVE MFA 閘門**（05，和 permissive policy 做 AND，繞不過）、角色能力矩陣（07）、展示帳號免 MFA（08）、policy 清理（09）、2026-10 的稽核修補（10–15：profiles 外洩、與正式庫對齊、限流、管理權收緊和展示帳號沙盒、病歷異動稽核、調配蓋章）。每支都有 RLS 整合測試（目前 109 條）。另外 16 讓展示資料每天自動重置，17 讓藥師工作台只拿得到調配需要的病人資料（姓名、性別、生日）。基礎 schema 見 [`supabase/complete_setup.sql`](supabase/complete_setup.sql)。
 
 **設計亮點**：PERMISSIVE + RESTRICTIVE 組合把 AAL2 以 AND 硬性套上；SECURITY DEFINER helper + `set search_path` 消除 policy 自我參照的無限遞迴；欄位級授權讓 `is_pro` / `pro_role` / `is_demo` 無法被使用者自行修改。
 
@@ -183,10 +183,8 @@ npm install
 #    supabase/create_reference_pdf_links.sql
 #    supabase/seed_medications.sql     (選用：30 種台灣常用藥)
 #    supabase/seed_resources.sql       (選用：醫療參考資源)
-#    supabase/seed_50_patients.sql     (選用：50 名模擬病患)
-#    supabase/seed_today_workload.sql  (選用：今日掛號/SOAP/處方資料)
 #
-# 3b. ★ 安全 migrations（必跑，依序 01→15）— 讓 fresh install 與正式環境得到相同的安全狀態：
+# 3b. ★ migrations（必跑，依序 01→17）— 讓 fresh install 與正式環境得到相同的狀態：
 #    01_role_authority              角色權限授權 + 欄位級 REVOKE + 防自我提權 trigger
 #    02_consent_integrity           同意書欄位/policy/atomic token
 #    03_phi_aal2_consent_hardening  PHI 讀取要求 AAL2 + 拒匿名 + 反遞迴 helper
@@ -202,10 +200,15 @@ npm install
 #    13_admin_and_demo_hardening    管理權要求 MFA 且排除展示帳號、資源庫寫入修補、展示帳號沙盒
 #    14_clinical_audit_log          病歷與 SOAP 筆記異動稽核
 #    15_dispense_attribution        調配者與調配時間由資料庫決定
+#    16_demo_data_reset             展示資料每天自動重置（pg_cron，台灣時間 00:01）
+#    17_pharmacy_queue              藥師工作台用 pharmacy_queue() 取得病人姓名（不開放整張病人表）
 #          ⚠️ 前提：03–05 對 PHI 強制 AAL2，套用「前」所有非 demo 的 pro 帳號必須先 enroll+challenge MFA
 #             取得 aal2，否則會失去病歷存取。順序：先綁 MFA → 再套 migration。
 #    ⚠️ pro_schema.sql 與 scripts/run-schema.mjs 已 DEPRECATED（勿執行；會撤銷 migration 04）。
 #       正式 schema 來源 = complete_setup.sql + 上述 migrations。詳見 supabase/migrations/README.md。
+#
+# 3c. 選用：示範門診資料（要在 migrations 之後跑）
+#    supabase/seed_50_patients.sql     (50 位虛構病人與今天的掛號、分診；5 位有 SOAP、病歷和處方)
 
 # 4. 開通管理員角色（將自己的帳號設為 admin）：
 #    UPDATE profiles SET is_pro=true, pro_role='admin' WHERE id='<你的 auth uid>';
@@ -232,7 +235,7 @@ GEMINI_API_KEY=YOUR_GEMINI_KEY
 
 ### Seed SQL 內的 Email 替換
 
-跑 seed 前須將 `seed_50_patients.sql`、`seed_today_workload.sql` 內的 `YOUR_DOCTOR_EMAIL@example.com` 替換成你 Supabase 上實際的醫師帳號 email。
+跑 seed 前須將 `seed_50_patients.sql` 內的 `YOUR_DOCTOR_EMAIL@example.com` 替換成你 Supabase 上實際的醫師帳號 email。
 
 ## 部署到 Cloudflare Workers
 
@@ -289,7 +292,7 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 | Gemini 後端代理（依使用者限流） | [`src/app/api/pro/gemini-clinical/`](src/app/api/pro/gemini-clinical/) |
 | 6 角色 RBAC 路由保護 | [`src/middleware.ts`](src/middleware.ts) |
 | 病歷異動稽核 trigger | [`supabase/migrations/20261003_14_clinical_audit_log.sql`](supabase/migrations/20261003_14_clinical_audit_log.sql) |
-| RLS 整合測試（95 條）| [`supabase/tests/rls_matrix.mjs`](supabase/tests/rls_matrix.mjs) |
+| RLS 整合測試（109 條）| [`supabase/tests/rls_matrix.mjs`](supabase/tests/rls_matrix.mjs) |
 | 正式庫和 repo 的 schema 漂移比對 | [`scripts/schema-drift.mjs`](scripts/schema-drift.mjs)（`npm run check:drift`）|
 | 用不同身分逐表實測讀、改、刪 | [`scripts/exposure-scan.mjs`](scripts/exposure-scan.mjs)（`npm run check:exposure`）|
 | CI/CD（部署 + 月度同步 + keep-alive + 版本檢查） | [`.github/workflows/`](.github/workflows/) |
@@ -343,6 +346,10 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 詳見[個人網站](https://jiayuselfweb.pages.dev)。
 
 歡迎研究合作、面談請益、或對任何技術細節提問。
+
+## 開發方式
+
+開發時使用 AI 輔助（Claude、GPT），架構決策、測試與上線驗證由我負責。
 
 ## 授權
 
