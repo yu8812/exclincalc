@@ -10,6 +10,7 @@
 ![STRIDE](https://img.shields.io/badge/Security-STRIDE--analyzed-darkred)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-deployed-f38020?logo=cloudflare)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
+[![CI](https://github.com/yu8812/exclincalc/actions/workflows/ci.yml/badge.svg)](https://github.com/yu8812/exclincalc/actions/workflows/ci.yml)
 
 🔒 **威脅模型**（STRIDE，30 個威脅，每一列都寫實際做到哪裡、還缺什麼）→ [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
 
