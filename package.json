@@ -9,6 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:rls": "node supabase/tests/rls_matrix.mjs",
+    "check:drift": "node scripts/schema-drift.mjs",
+    "check:exposure": "node scripts/exposure-scan.mjs",
+    "docs:policies": "node scripts/dump-policies.mjs",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare build && wrangler dev"
   },

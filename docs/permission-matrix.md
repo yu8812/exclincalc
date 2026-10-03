@@ -66,6 +66,18 @@ repo 裡另外有 `reference_pdf_links`（指引 PDF 版本追蹤），正式庫
 
 ---
 
+## 正式庫和 repo 的已知差異
+
+`npm run check:drift`（`scripts/schema-drift.mjs`）會把正式庫和「用 repo 檔案從零建起來的資料庫」逐項比對。2026-10-03 比對後只剩下面這些，都確認過可以接受：
+
+- `reference_pdf_links`：只在 repo（正式庫沒建，見 README 的 check-versions workflow）
+- `profiles` 的 `date_of_birth`、`gender`、`language`、`role` 欄位只在正式庫：民眾端 ClinCalc 用的欄位，定義不在這個 repo；`avatar_url` 只在 repo
+- `profiles.pro_role` 的預設值：repo 是 `doctor`，正式庫沒有預設值（新帳號一律由管理員指派角色，不影響權限）
+- `rls_auto_enable()`：Supabase 自己建的 event trigger，新表會自動開 RLS
+- `rotate_health_records()`：兩邊只差在註解
+
+---
+
 ## 附錄：正式庫 policy 全表
 
 <!-- 以下由 scripts/dump-policies.mjs 產生，請勿手改 -->

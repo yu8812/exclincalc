@@ -290,6 +290,8 @@ DB migration 以 `pg` client 連 Supabase **Session pooler**、逐檔包 transac
 | 6 角色 RBAC 路由保護 | [`src/middleware.ts`](src/middleware.ts) |
 | 病歷異動稽核 trigger | [`supabase/migrations/20261003_14_clinical_audit_log.sql`](supabase/migrations/20261003_14_clinical_audit_log.sql) |
 | RLS 整合測試（95 條）| [`supabase/tests/rls_matrix.mjs`](supabase/tests/rls_matrix.mjs) |
+| 正式庫和 repo 的 schema 漂移比對 | [`scripts/schema-drift.mjs`](scripts/schema-drift.mjs)（`npm run check:drift`）|
+| 用不同身分逐表實測讀、改、刪 | [`scripts/exposure-scan.mjs`](scripts/exposure-scan.mjs)（`npm run check:exposure`）|
 | CI/CD（部署 + 月度同步 + keep-alive + 版本檢查） | [`.github/workflows/`](.github/workflows/) |
 
 ## 從實作中發現的研究問題
