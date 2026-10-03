@@ -10,6 +10,7 @@ import { analyzeClinically, type ClinicalAnalysisResult } from "@/lib/pro/clinic
 import { runTaiwanRules } from "@/lib/pro/taiwanFamilyMedicine";
 import ICD10Table from "@/components/pro/ICD10Table";
 import SOAPEditor from "@/components/pro/SOAPEditor";
+import { askClinicalAi, patientContextForAi } from "@/lib/pro/askAi";
 import ExamProgressGuide from "@/components/pro/ExamProgressGuide";
 
 interface Patient {
@@ -40,6 +41,7 @@ export default function NewClinicalRecordPage() {
   const [clinicalResult, setClinicalResult] = useState<ClinicalAnalysisResult | null>(null);
   const [aiResult, setAiResult] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [saving, setSaving] = useState(false);
   const [gender, setGender] = useState<"M" | "F" | undefined>(undefined);
   const [highlightKeys, setHighlightKeys] = useState<Set<string>>(new Set());
@@ -80,36 +82,30 @@ export default function NewClinicalRecordPage() {
     setTimeout(() => setHighlightKeys(new Set()), 3000);
   };
 
-  const handleAiAssist = async (sopaContext: string) => {
+  const handleAiAssist = async (soapContext: string) => {
     setAiLoading(true);
-    try {
-      const labSummary = Object.entries(labData).filter(([, v]) => v).map(([k, v]) => {
-        const ref = REFERENCE_RANGES.find(r => r.key === k);
-        return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
-      }).join(", ");
-
-      const res = await fetch("/api/pro/gemini-clinical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "clinical",
-          patientContext: patient ? `Patient: ${patient.full_name}, Sex: ${patient.sex}, DOB: ${patient.date_of_birth}, Chronic: ${patient.chronic_conditions?.join(", ")}, Allergies: ${patient.allergies?.join(", ")}` : "",
-          labData: labSummary,
-          symptoms: chiefComplaint,
-          soapDraft: sopaContext,
-        }),
-      });
-      const json = await res.json();
-      setAiResult(json.result || json.error || "AI 分析失敗");
-      if (json.result) {
-        setSoap(prev => ({
-          ...prev,
-          assessment: prev.assessment || (clinicalResult?.differentials.slice(0, 3).map(d => `• ${d.diagnosis_zh} (${d.icd10})`).join("\n") || ""),
-        }));
-      }
-    } finally {
-      setAiLoading(false);
+    setAiError("");
+    const labSummary = Object.entries(labData).filter(([, v]) => v).map(([k, v]) => {
+      const ref = REFERENCE_RANGES.find(r => r.key === k);
+      return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
+    }).join(", ");
+    const r = await askClinicalAi({
+      // 只送年齡、性別、慢性病、過敏；姓名和生日不出這台伺服器
+      patientContext: patient ? patientContextForAi(patient) : "",
+      labData: labSummary,
+      symptoms: chiefComplaint,
+      soapDraft: soapContext,
+    });
+    if (r.ok) {
+      setAiResult(r.text);
+      setSoap(prev => ({
+        ...prev,
+        assessment: prev.assessment || (clinicalResult?.differentials.slice(0, 3).map(d => `• ${d.diagnosis_zh} (${d.icd10})`).join("\n") || ""),
+      }));
+    } else {
+      setAiError(r.message);
     }
+    setAiLoading(false);
   };
 
   const handleSave = async () => {
@@ -346,6 +342,7 @@ export default function NewClinicalRecordPage() {
               onChange={(k, v) => setSoap(prev => ({ ...prev, [k]: v }))}
               onAiAssist={handleAiAssist}
               aiLoading={aiLoading}
+              aiError={aiError}
             />
           </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
 
 interface SOAPSection {
   key: "subjective" | "objective" | "assessment" | "plan";
@@ -39,9 +39,15 @@ interface SOAPEditorProps {
   onChange: (key: string, value: string) => void;
   onAiAssist?: (context: string) => void;
   aiLoading?: boolean;
+  // AI 回覆全文。顯示在 P 欄下面，由醫師決定要不要加進 A 欄，不會自己蓋掉醫師寫的內容。
+  aiSuggestion?: string;
+  aiError?: string;
+  onDismissAi?: () => void;
 }
 
-export default function SOAPEditor({ values, onChange, onAiAssist, aiLoading }: SOAPEditorProps) {
+export default function SOAPEditor({
+  values, onChange, onAiAssist, aiLoading, aiSuggestion, aiError, onDismissAi,
+}: SOAPEditorProps) {
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   // Auto-resize textareas
@@ -59,6 +65,13 @@ export default function SOAPEditor({ values, onChange, onAiAssist, aiLoading }: 
     if (!onAiAssist) return;
     const context = `S: ${values.subjective || ""}\nO: ${values.objective || ""}`;
     onAiAssist(context);
+  };
+
+  const appendToAssessment = () => {
+    if (!aiSuggestion) return;
+    const current = values.assessment?.trim();
+    onChange("assessment", current ? `${current}\n\n${aiSuggestion.trim()}` : aiSuggestion.trim());
+    onDismissAi?.();
   };
 
   return (
@@ -100,7 +113,7 @@ export default function SOAPEditor({ values, onChange, onAiAssist, aiLoading }: 
                 }}
               >
                 <Sparkles size={11} />
-                AI 輔助
+                {aiLoading ? "AI 思考中…" : "AI 輔助"}
               </button>
             )}
           </div>
@@ -126,6 +139,46 @@ export default function SOAPEditor({ values, onChange, onAiAssist, aiLoading }: 
           </div>
         </div>
       ))}
+
+      {aiError && (
+        <div role="alert" style={{
+          padding: "10px 14px", borderRadius: 8, fontSize: 13,
+          background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "var(--pro-danger)",
+        }}>
+          {aiError}
+        </div>
+      )}
+
+      {aiSuggestion && (
+        <div className="pro-card" style={{ padding: 16, border: "1px solid rgba(59,130,246,0.25)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--pro-accent)" }}>
+              <Sparkles size={13} /> AI 建議（僅供參考，請自行判斷）
+            </div>
+            <button onClick={onDismissAi} aria-label="關閉 AI 建議"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--pro-text-muted)" }}>
+              <X size={14} />
+            </button>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.75, color: "var(--pro-text)", whiteSpace: "pre-wrap", maxHeight: 360, overflowY: "auto" }}>
+            {aiSuggestion}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={appendToAssessment} style={{
+              padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              background: "var(--pro-accent)", color: "#fff", border: "none",
+            }}>
+              加到評估 (A) 欄最後面
+            </button>
+            <button onClick={onDismissAi} style={{
+              padding: "6px 12px", borderRadius: 6, fontSize: 12, cursor: "pointer",
+              background: "transparent", color: "var(--pro-text-muted)", border: "1px solid var(--pro-border)",
+            }}>
+              不用了
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { REFERENCE_RANGES } from "@/lib/referenceRanges";
 import { analyzeClinically, type ClinicalAnalysisResult } from "@/lib/pro/clinicalAnalysis";
 import { runTaiwanRules, EXAM_PACKAGES } from "@/lib/pro/taiwanFamilyMedicine";
 import ICD10Table from "@/components/pro/ICD10Table";
+import { askClinicalAi } from "@/lib/pro/askAi";
 
 // ── 主訴快選 ─────────────────────────────────────────────────
 const COMPLAINTS = [
@@ -48,6 +49,7 @@ export default function ExamWorkbenchPage() {
   const [result, setResult] = useState<ClinicalAnalysisResult | null>(null);
   const [aiResult, setAiResult] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
@@ -123,27 +125,19 @@ export default function ExamWorkbenchPage() {
   // AI Assist
   const handleAI = async () => {
     setAiLoading(true);
-    try {
-      const labSummary = Object.entries(labData)
-        .filter(([, v]) => v)
-        .map(([k, v]) => {
-          const ref = REFERENCE_RANGES.find(r => r.key === k);
-          return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
-        }).join(", ");
-      const res = await fetch("/api/pro/gemini-clinical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          labData: labSummary,
-          context: `主訴: ${complaint || "未指定"}, 性別: ${gender || "未知"}, 年齡: ${age || "未知"}`,
-          analysisResult: result,
-        }),
-      });
-      const json = await res.json();
-      setAiResult(json.analysis || json.error || "");
-    } finally {
-      setAiLoading(false);
-    }
+    setAiError("");
+    const labSummary = Object.entries(labData).filter(([, v]) => v).map(([k, v]) => {
+      const ref = REFERENCE_RANGES.find(r => r.key === k);
+      return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
+    }).join(", ");
+    const r = await askClinicalAi({
+      patientContext: `Sex: ${gender || "unknown"}, Age: ${age || "unknown"}`,
+      symptoms: complaint || undefined,
+      labData: labSummary,
+    });
+    if (r.ok) setAiResult(r.text);
+    else { setAiResult(""); setAiError(r.message); }
+    setAiLoading(false);
   };
 
   // Save to patient record
@@ -557,6 +551,9 @@ export default function ExamWorkbenchPage() {
             >
               <Sparkles size={13} /> {aiLoading ? "AI 分析中..." : "AI 臨床輔助"}
             </button>
+            {aiError && (
+              <div role="alert" style={{ marginTop: 10, fontSize: 12, color: "var(--pro-danger)" }}>{aiError}</div>
+            )}
             {aiResult && (
               <div style={{ marginTop: 10, fontSize: 11, color: "var(--pro-text-muted)", lineHeight: 1.8, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
                 {aiResult}

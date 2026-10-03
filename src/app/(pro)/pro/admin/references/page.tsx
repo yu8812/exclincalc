@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 import { REFERENCE_RANGES } from "@/lib/referenceRanges";
+import { adminDataRequest } from "@/lib/pro/errorText";
 import AdminDataTable, { type ColumnDef } from "@/components/pro/AdminDataTable";
 
 interface MedReference {
@@ -68,50 +69,43 @@ export default function AdminReferencesPage() {
   useEffect(() => { load(); }, []);
 
   const handleSave = async (row: MedReference) => {
-    await fetch("/api/pro/admin", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medical_references", row }),
-    });
+    const err = await adminDataRequest("PUT", { table: "medical_references", row });
+    if (err) alert(err);
     await load();
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("確定刪除此參考值？")) return;
-    await fetch("/api/pro/admin", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medical_references", id }),
-    });
+    if (!confirm("確定刪除這筆參考值？刪了就救不回來。")) return;
+    const err = await adminDataRequest("DELETE", { table: "medical_references", id });
+    if (err) alert(err);
     await load();
   };
 
   const syncFromLocal = async () => {
     setSyncing(true);
+    let firstError: string | null = null;
     for (const ref of REFERENCE_RANGES) {
-      await fetch("/api/pro/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          table: "medical_references",
-          upsert: true,
-          row: {
-            key: ref.key,
-            label_zh: ref.label_zh,
-            label_en: ref.label_en,
-            unit: ref.unit,
-            explanation_zh: ref.explanation_zh,
-            normal_general: ref.normal.general || null,
-            normal_male: ref.normal.male || null,
-            normal_female: ref.normal.female || null,
-            warning_high: ref.warning_high ?? null,
-            warning_low: ref.warning_low ?? null,
-            category: ref.category,
-            source: ref.source || null,
-          },
-        }),
+      const err = await adminDataRequest("POST", {
+        table: "medical_references",
+        upsert: true,
+        row: {
+          key: ref.key,
+          label_zh: ref.label_zh,
+          label_en: ref.label_en,
+          unit: ref.unit,
+          explanation_zh: ref.explanation_zh,
+          normal_general: ref.normal.general || null,
+          normal_male: ref.normal.male || null,
+          normal_female: ref.normal.female || null,
+          warning_high: ref.warning_high ?? null,
+          warning_low: ref.warning_low ?? null,
+          category: ref.category,
+          source: ref.source || null,
+        },
       });
+      if (err) { firstError = err; break; }   // 第一筆就被拒（例如展示帳號），後面不用再試
     }
+    if (firstError) alert(firstError);
     await load();
     setSyncing(false);
   };
@@ -119,14 +113,14 @@ export default function AdminReferencesPage() {
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSaving(true);
-    await fetch("/api/pro/admin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medical_references", row: newRef }),
-    });
-    await load();
-    setShowForm(false);
-    setNewRef({});
+    const err = await adminDataRequest("POST", { table: "medical_references", row: newRef });
+    if (err) {
+      alert(err);
+    } else {
+      await load();
+      setShowForm(false);
+      setNewRef({});
+    }
     setFormSaving(false);
   };
 

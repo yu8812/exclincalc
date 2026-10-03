@@ -5,6 +5,7 @@ import {
   Users, Shield, ShieldOff, Trash2, KeyRound,
   CheckCircle, RefreshCw, ChevronDown, ChevronRight, Smartphone, Search,
 } from "lucide-react";
+import { errorText } from "@/lib/pro/errorText";
 
 // ── Role definitions (Pro roles only) ─────────────────────────────
 const ROLE_ORDER = ["super_admin", "admin", "doctor", "pharmacist", "nurse", "admin_staff"] as const;
@@ -44,6 +45,8 @@ export default function AdminUsersPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentRole, setCurrentRole] = useState<ProRole>("doctor");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [readOnly, setReadOnly] = useState(false);   // 展示用 admin：只看得到展示帳號，所有操作關閉
+  const [loadError, setLoadError] = useState("");
 
   const [resetModal, setResetModal] = useState<{ userId: string; email: string } | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -55,11 +58,24 @@ export default function AdminUsersPage() {
 
   const load = async () => {
     setLoading(true);
-    const res = await fetch("/api/pro/admin/users");
-    const json = await res.json();
-    setUsers(json.users || []);
-    setCurrentUserId(json.currentUserId ?? null);
-    setCurrentRole(json.currentRole ?? "doctor");
+    setLoadError("");
+    try {
+      const res = await fetch("/api/pro/admin/users");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setUsers([]);
+        setLoadError(res.status === 403
+          ? "帳號列表只有管理員看得到；如果你是管理員，請先完成兩步驟驗證再回來。"
+          : "帳號列表暫時載入不了，請按「重新整理」再試一次。");
+      } else {
+        setUsers(json.users || []);
+        setCurrentUserId(json.currentUserId ?? null);
+        setCurrentRole(json.currentRole ?? "doctor");
+        setReadOnly(json.readOnly === true);
+      }
+    } catch {
+      setLoadError("連不上伺服器，檢查一下網路再試。");
+    }
     setLoading(false);
   };
 
@@ -72,27 +88,28 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, updates }),
     });
-    const json = await res.json();
-    if (json.error) alert(`操作失敗：${json.error}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) alert(errorText(json));
     await load();
     setActionLoading(null);
   };
 
   const deleteUser = async (user: UserRow) => {
-    if (!confirm(`確定刪除帳號 ${user.email}？\n此操作不可復原。`)) return;
+    if (!confirm(`確定要刪除 ${user.email}？\n\n這個帳號底下的資料（病人、病歷、健康記錄）會一起刪掉，刪了就救不回來。`)) return;
     setActionLoading(user.id);
-    await fetch("/api/pro/admin/users", {
+    const res = await fetch("/api/pro/admin/users", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: user.id }),
     });
+    if (!res.ok) alert(errorText(await res.json().catch(() => ({}))));
     await load();
     setActionLoading(null);
   };
 
   const resetPassword = async () => {
     if (!resetModal) return;
-    if (newPassword.length < 8) { setPwError("密碼至少 8 字元"); return; }
+    if (newPassword.length < 8) { setPwError("密碼至少要 8 個字元。"); return; }
     setPwError("");
     setActionLoading(resetModal.userId);
     const res = await fetch("/api/pro/admin/users", {
@@ -100,12 +117,12 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "reset_password", userId: resetModal.userId, newPassword }),
     });
-    const json = await res.json();
-    if (json.error) { setPwError(json.error); setActionLoading(null); return; }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) { setPwError(errorText(json)); setActionLoading(null); return; }
     setResetModal(null);
     setNewPassword("");
     setActionLoading(null);
-    alert("密碼已重設成功");
+    alert("密碼已經重設好了。記得用安全的管道告訴對方，並請對方登入後自己改掉。");
   };
 
   const resetMfa = async (user: UserRow) => {
@@ -124,10 +141,10 @@ export default function AdminUsersPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "reset_mfa", userId: user.id }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setActionLoading(null);
-    if (json.error) { alert(`操作失敗：${json.error}`); return; }
-    alert(`已移除 ${json.removed ?? 0} 個驗證器，使用者下次登入將重新設定 TOTP`);
+    if (!res.ok) { alert(errorText(json)); return; }
+    alert(`已移除 ${json.removed ?? 0} 個驗證器。對方下次登入時，系統會引導重新綁定。`);
   };
 
   const fmt = (iso: string | null) => {
@@ -137,6 +154,7 @@ export default function AdminUsersPage() {
   };
 
   const canChangeRole = (target: UserRow) => {
+    if (readOnly) return false;
     if (target.id === currentUserId) return false;
     if (!target.is_pro) return false;
     if (target.pro_role === "super_admin") return false;
@@ -146,6 +164,7 @@ export default function AdminUsersPage() {
   };
 
   const canDelete = (target: UserRow) => {
+    if (readOnly) return false;
     if (target.id === currentUserId) return false;
     if (target.pro_role === "super_admin" && target.is_pro) return false;
     return true;
@@ -244,12 +263,13 @@ export default function AdminUsersPage() {
         <td style={{ padding: "11px 14px" }}>
           <div style={{ display: "flex", gap: 8, fontSize: 12, color: "var(--pro-text-muted)" }}>
             <span title="負責病患數" style={{ cursor: "help" }}>👤 {u.patients}</span>
-            <span title="建立的健康記錄數" style={{ cursor: "help" }}>📋 {u.records}</span>
+            <span title="門診病歷數" style={{ cursor: "help" }}>📋 {u.records}</span>
             <span title="SOAP 病歷筆記數" style={{ cursor: "help" }}>📝 {u.notes}</span>
           </div>
         </td>
 
         <td style={{ padding: "11px 14px" }}>
+          {readOnly ? <span style={{ fontSize: 11, color: "var(--pro-text-muted)" }}>僅供瀏覽</span> : (
           <div style={{ display: "flex", gap: 5 }}>
             <button
               onClick={() => !isSelf && patch(u.id, { is_pro: !u.is_pro })}
@@ -304,6 +324,7 @@ export default function AdminUsersPage() {
               </button>
             )}
           </div>
+          )}
         </td>
       </tr>
     );
@@ -335,6 +356,7 @@ export default function AdminUsersPage() {
         <span style={{ fontSize: 11, color: "var(--pro-text-muted)", fontStyle: "italic" }}>ClinCalc 健康記錄</span>
       </td>
       <td style={{ padding: "11px 14px" }}>
+        {readOnly ? <span style={{ fontSize: 11, color: "var(--pro-text-muted)" }}>僅供瀏覽</span> : (
         <div style={{ display: "flex", gap: 5 }}>
           <button
             onClick={() => patch(u.id, { is_pro: true })}
@@ -361,6 +383,7 @@ export default function AdminUsersPage() {
             <Trash2 size={11} />
           </button>
         </div>
+        )}
       </td>
     </tr>
   );
@@ -403,15 +426,29 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {readOnly && (
+        <div style={{
+          marginBottom: 14, padding: "10px 14px", borderRadius: 8, fontSize: 12, lineHeight: 1.7,
+          background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)", color: "var(--pro-text)",
+        }}>
+          你現在用的是<b>展示用的管理員帳號</b>：這裡只列出展示帳號，改角色、重設密碼、刪除這些操作都關掉了。
+          真正的管理員要先通過兩步驟驗證，才看得到完整名單。
+        </div>
+      )}
+
       {loading ? (
         <div style={{ textAlign: "center", padding: 40, color: "var(--pro-text-muted)" }}>載入中...</div>
+      ) : loadError ? (
+        <div className="pro-card" style={{ padding: 32, textAlign: "center", fontSize: 13, color: "var(--pro-text-muted)" }}>
+          {loadError}
+        </div>
       ) : (
         <div className="pro-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="pro-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 {["電子郵件", "角色", "最後登入", "活動量", "操作"].map((h) => (
-                  <th key={h} title={h === "活動量" ? "👤 負責病患數 · 📋 健康記錄數 · 📝 SOAP 病歷筆記數" : undefined} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--pro-text-muted)", borderBottom: "1px solid var(--pro-border)", background: "var(--pro-bg)", cursor: h === "活動量" ? "help" : undefined }}>
+                  <th key={h} title={h === "活動量" ? "👤 負責病患數 · 📋 門診病歷數 · 📝 SOAP 病歷筆記數" : undefined} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "var(--pro-text-muted)", borderBottom: "1px solid var(--pro-border)", background: "var(--pro-bg)", cursor: h === "活動量" ? "help" : undefined }}>
                     {h}{h === "活動量" && <span style={{ marginLeft: 4, opacity: 0.6 }}>ⓘ</span>}
                   </th>
                 ))}

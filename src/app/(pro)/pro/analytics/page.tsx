@@ -20,6 +20,7 @@ interface AnalyticsData {
   weeklyVolume: Array<{ week: string; count: number }>;
   sexDistribution: Array<{ sex: string; count: number }>;
   topMedicationCategories: Array<{ category: string; count: number }>;
+  scope?: "demo" | "all";   // demo = 展示帳號登入，只算展示資料
 }
 
 function SimpleBarChart({ data, maxVal, colorVar = "var(--pro-accent)" }: {
@@ -62,43 +63,27 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     fetch("/api/pro/analytics")
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) setError(d.error);
-        else setData(d);
+      .then(async r => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+      .then(({ status, body }) => {
+        if (status === 403) setError("數據分析只有管理員看得到；如果你是管理員，請先完成兩步驟驗證再回來。");
+        else if (status === 401) setError("登入已經過期，重新登入後再試一次。");
+        else if (body.error) setError("統計資料暫時載入不了，重新整理一次試試。");
+        else setData(body);
         setLoading(false);
       })
-      .catch(() => { setError("載入失敗"); setLoading(false); });
+      .catch(() => { setError("連不上伺服器，檢查一下網路再試。"); setLoading(false); });
   }, []);
 
   const handleAiAnalysis = async () => {
     if (!data) return;
     setAiLoading(true);
     setAiAnalysis("");
-    const accuracy = data.diagnosisAccuracy !== null ? `${data.diagnosisAccuracy}%（共 ${data.totalFeedback} 筆回饋，正確 ${data.correctCount}、部分 ${data.partialCount}、有誤 ${data.incorrectCount}）` : "尚無回饋資料";
-    const prompt = `你是一位醫療資訊系統顧問。以下是 ClinCalc Pro 臨床決策平台的最新使用統計，請用繁體中文提供 3-4 點簡短的洞察與建議（每點 1-2 句話，著重臨床實用性）：
-
-平台統計摘要：
-- 已登錄 Pro 帳號：${data.totalUsers} 個
-- 管理病患記錄：${data.totalPatients} 筆
-- 藥物資料庫：${data.totalMedications} 筆
-- 醫療參考值：${data.totalReferences} 筆
-- AI 診斷準確率（E 指標）：${accuracy}
-- 健康記錄總數：${data.totalRecords} 筆（手動 ${data.totalManual}、掃描 ${data.totalScan}）
-${data.sexDistribution?.length ? `- 病患性別分布：${data.sexDistribution.map(s => `${s.sex === "M" ? "男" : s.sex === "F" ? "女" : "其他"} ${s.count}人`).join("、")}` : ""}
-
-請聚焦於：平台使用趨勢、AI 診斷準確率的臨床意義、資料庫完整度、以及可優化的方向。`;
-
     try {
-      const res = await fetch("/api/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "analyze", text: prompt }),
-      });
-      const json = await res.json();
-      setAiAnalysis(json.result || json.error || "分析失敗，請稍後再試");
+      const res = await fetch("/api/pro/analytics", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      setAiAnalysis(json.result || json.message || "AI 這次沒有回應，等一下再試一次。");
     } catch {
-      setAiAnalysis("無法連線至 AI 服務，請確認網路連線");
+      setAiAnalysis("連不上伺服器，檢查一下網路再試。");
     }
     setAiLoading(false);
   };
@@ -117,7 +102,9 @@ ${data.sexDistribution?.length ? `- 病患性別分布：${data.sexDistribution.
           <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--pro-text)", display: "flex", alignItems: "center", gap: 8 }}>
             <BarChart3 size={20} color="var(--pro-accent)" /> 數據分析
           </h1>
-          <p style={{ fontSize: 13, color: "var(--pro-text-muted)", marginTop: 4 }}>平台使用統計概覽</p>
+          <p style={{ fontSize: 13, color: "var(--pro-text-muted)", marginTop: 4 }}>
+            {data.scope === "demo" ? "展示模式：下面的數字只算展示帳號的虛構資料" : "平台使用統計概覽"}
+          </p>
         </div>
         <button
           onClick={handleAiAnalysis}
@@ -140,7 +127,7 @@ ${data.sexDistribution?.length ? `- 病患性別分布：${data.sexDistribution.
 
       {/* Summary cards — A: Accounts, B: Patients, C: Drugs, D: References, E: Accuracy */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14, marginBottom: 28 }}>
-        <ProStatCard icon={Users}        value={data.totalUsers}       label="帳號數"      color="blue"   href="/pro/admin/users" />
+        <ProStatCard icon={Users}        value={data.totalUsers}       label={data.scope === "demo" ? "展示帳號數" : "帳號數"}      color="blue"   href="/pro/admin/users" />
         <ProStatCard icon={Stethoscope}  value={data.totalPatients}    label="病患記錄"    color="green"  href="/pro/patients" />
         <ProStatCard icon={Pill}         value={data.totalMedications} label="藥物資料庫"  color="yellow" href="/pro/admin/medications" />
         <ProStatCard icon={BookOpen}     value={data.totalReferences}  label="醫療參考值"  color="red"    href="/pro/admin/references" />

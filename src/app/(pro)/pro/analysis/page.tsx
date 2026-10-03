@@ -5,6 +5,7 @@ import { FlaskConical, Sparkles, AlertTriangle } from "lucide-react";
 import { REFERENCE_RANGES, CATEGORIES } from "@/lib/referenceRanges";
 import { analyzeClinically, type ClinicalAnalysisResult } from "@/lib/pro/clinicalAnalysis";
 import ICD10Table from "@/components/pro/ICD10Table";
+import { askClinicalAi } from "@/lib/pro/askAi";
 
 export default function ClinicalAnalysisPage() {
   const [gender, setGender] = useState<"M" | "F" | "">("");
@@ -13,6 +14,7 @@ export default function ClinicalAnalysisPage() {
   const [result, setResult] = useState<ClinicalAnalysisResult | null>(null);
   const [aiResult, setAiResult] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   const runAnalysis = useCallback(() => {
     const numData: Record<string, number | string> = {};
@@ -30,26 +32,18 @@ export default function ClinicalAnalysisPage() {
 
   const handleAI = async () => {
     setAiLoading(true);
-    try {
-      const labSummary = Object.entries(labData).filter(([, v]) => v).map(([k, v]) => {
-        const ref = REFERENCE_RANGES.find(r => r.key === k);
-        return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
-      }).join(", ");
-      const res = await fetch("/api/pro/gemini-clinical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "clinical",
-          patientContext: `Sex: ${gender || "unknown"}, Age: ${age || "unknown"}`,
-          labData: labSummary,
-          symptoms: "",
-        }),
-      });
-      const json = await res.json();
-      setAiResult(json.result || json.error || "分析失敗");
-    } finally {
-      setAiLoading(false);
-    }
+    setAiError("");
+    const labSummary = Object.entries(labData).filter(([, v]) => v).map(([k, v]) => {
+      const ref = REFERENCE_RANGES.find(r => r.key === k);
+      return ref ? `${ref.label_en}: ${v} ${ref.unit}` : `${k}: ${v}`;
+    }).join(", ");
+    const r = await askClinicalAi({
+      patientContext: `Sex: ${gender || "unknown"}, Age: ${age || "unknown"}`,
+      labData: labSummary,
+    });
+    if (r.ok) setAiResult(r.text);
+    else { setAiResult(""); setAiError(r.message); }
+    setAiLoading(false);
   };
 
   const categoryGroups = Object.entries(CATEGORIES);
@@ -174,6 +168,12 @@ export default function ClinicalAnalysisPage() {
               <Sparkles size={14} />
               {aiLoading ? "AI 分析中..." : "取得 AI 臨床分析"}
             </button>
+          )}
+
+          {aiError && (
+            <div role="alert" style={{ padding: "10px 14px", borderRadius: 8, fontSize: 12, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "var(--pro-danger)" }}>
+              {aiError}
+            </div>
           )}
 
           {aiResult && (

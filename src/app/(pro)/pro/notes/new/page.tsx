@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Save, Clock } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import SOAPEditor from "@/components/pro/SOAPEditor";
+import { askClinicalAi } from "@/lib/pro/askAi";
 
 export default function NewNotePage() {
   const router = useRouter();
@@ -16,6 +17,8 @@ export default function NewNotePage() {
   const [selectedPatient, setSelectedPatient] = useState<{ id: string; full_name: string } | null>(null);
   const [showPatientList, setShowPatientList] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState("");
+  const [aiError, setAiError] = useState("");
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,22 +71,11 @@ export default function NewNotePage() {
 
   const handleAiAssist = async (context: string) => {
     setAiLoading(true);
-    try {
-      const res = await fetch("/api/pro/gemini-clinical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "clinical", soapDraft: context, symptoms: soap.subjective }),
-      });
-      const json = await res.json();
-      if (json.result) {
-        setSoap(prev => ({
-          ...prev,
-          assessment: prev.assessment || json.result.split("\n").slice(0, 5).join("\n"),
-        }));
-      }
-    } finally {
-      setAiLoading(false);
-    }
+    setAiError("");
+    const r = await askClinicalAi({ soapDraft: context, symptoms: soap.subjective });
+    if (r.ok) setAiSuggestion(r.text);
+    else setAiError(r.message);
+    setAiLoading(false);
   };
 
   const handleSave = async (asDraft = false) => {
@@ -169,6 +161,9 @@ export default function NewNotePage() {
         onChange={(k, v) => setSoap(prev => ({ ...prev, [k]: v }))}
         onAiAssist={handleAiAssist}
         aiLoading={aiLoading}
+        aiSuggestion={aiSuggestion}
+        aiError={aiError}
+        onDismissAi={() => setAiSuggestion("")}
       />
     </div>
   );

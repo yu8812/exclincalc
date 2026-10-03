@@ -122,8 +122,9 @@ export default function ReferencesPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setCurrentUserId(user.id);
-      const { data: prof } = await supabase.from("profiles").select("pro_role").eq("id", user.id).single();
-      setIsAdmin(["admin", "super_admin"].includes(prof?.pro_role ?? ""));
+      const { data: prof } = await supabase.from("profiles").select("pro_role, is_demo").eq("id", user.id).single();
+      // 展示用 admin 不能管理公開資源（資料庫也會擋），畫面上就當一般醫師
+      setIsAdmin(["admin", "super_admin"].includes(prof?.pro_role ?? "") && prof?.is_demo !== true);
     }
     const { data } = await supabase
       .from("pro_resources")
@@ -188,29 +189,35 @@ export default function ReferencesPage() {
       is_public: isAdmin ? form.is_public : false,
       created_by: user.id,
     };
-    await supabase.from("pro_resources").insert(payload);
+    const { error } = await supabase.from("pro_resources").insert(payload);
+    setSaving(false);
+    if (error) { alert("沒有存成功，請重新整理後再試一次。"); return; }
     setForm(EMPTY_FORM);
     setShowForm(false);
-    setSaving(false);
     load();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("確定刪除這筆資料？")) return;
     const supabase = createClient();
-    await supabase.from("pro_resources").delete().eq("id", id);
+    // 被權限擋下時資料庫不會報錯、只會刪掉 0 筆，所以要看實際刪了幾筆
+    const { data, error } = await supabase.from("pro_resources").delete().eq("id", id).select("id");
+    if (error || !data?.length) { alert("這筆沒有刪掉：只有建立者或管理員可以刪除。"); return; }
     setResources(prev => prev.filter(r => r.id !== id));
   };
 
   const handleDeleteMany = async (ids: string[]) => {
     const supabase = createClient();
-    await supabase.from("pro_resources").delete().in("id", ids);
-    setResources(prev => prev.filter(r => !ids.includes(r.id)));
+    const { data } = await supabase.from("pro_resources").delete().in("id", ids).select("id");
+    const deleted = new Set((data ?? []).map(r => r.id as string));
+    if (deleted.size < ids.length) alert(`有 ${ids.length - deleted.size} 筆沒有刪掉：只有建立者或管理員可以刪除。`);
+    setResources(prev => prev.filter(r => !deleted.has(r.id)));
   };
 
   const handleUpdateCover = async (id: string, cover_url: string) => {
     const supabase = createClient();
-    await supabase.from("pro_resources").update({ cover_url: cover_url || null }).eq("id", id);
+    const { data } = await supabase.from("pro_resources").update({ cover_url: cover_url || null }).eq("id", id).select("id");
+    if (!data?.length) { alert("封面沒有更新：只有建立者或管理員可以修改。"); return; }
     setResources(prev => prev.map(r => r.id === id ? { ...r, cover_url: cover_url || null } : r));
   };
 

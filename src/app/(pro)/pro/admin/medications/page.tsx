@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
+import { adminDataRequest } from "@/lib/pro/errorText";
 import AdminDataTable, { type ColumnDef } from "@/components/pro/AdminDataTable";
 
 interface Medication {
@@ -87,21 +88,15 @@ export default function AdminMedicationsPage() {
   useEffect(() => { load(); }, []);
 
   const handleSave = async (row: Medication) => {
-    const res = await fetch("/api/pro/admin", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medications", row }),
-    });
-    if (res.ok) await load();
+    const err = await adminDataRequest("PUT", { table: "medications", row });
+    if (err) alert(err);
+    await load();
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("確定刪除此藥物記錄？")) return;
-    await fetch("/api/pro/admin", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medications", id }),
-    });
+    if (!confirm("確定刪除這筆藥物資料？刪了就救不回來。")) return;
+    const err = await adminDataRequest("DELETE", { table: "medications", id });
+    if (err) alert(err);
     await load();
   };
 
@@ -110,12 +105,10 @@ export default function AdminMedicationsPage() {
   const handleSubmitNew = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSaving(true);
-    const res = await fetch("/api/pro/admin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table: "medications", row: newMed }),
-    });
-    if (res.ok) {
+    const err = await adminDataRequest("POST", { table: "medications", row: newMed });
+    if (err) {
+      alert(err);
+    } else {
       await load();
       setShowForm(false);
       setNewMed({ prescription_required: true });

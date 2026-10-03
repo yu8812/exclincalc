@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Save, Clock, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import SOAPEditor from "@/components/pro/SOAPEditor";
+import { askClinicalAi } from "@/lib/pro/askAi";
 
 interface NoteData {
   id: string; title: string | null; draft: boolean;
@@ -24,6 +25,8 @@ export default function EditNotePage() {
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState("");
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -71,14 +74,11 @@ export default function EditNotePage() {
 
   const handleAiAssist = async (context: string) => {
     setAiLoading(true);
-    try {
-      const res = await fetch("/api/pro/gemini-clinical", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "clinical", soapDraft: context, symptoms: soap.subjective }),
-      });
-      const json = await res.json();
-      if (json.result) setSoap(prev => ({ ...prev, assessment: prev.assessment || json.result.split("\n").slice(0, 5).join("\n") }));
-    } finally { setAiLoading(false); }
+    setAiError("");
+    const r = await askClinicalAi({ soapDraft: context, symptoms: soap.subjective });
+    if (r.ok) setAiSuggestion(r.text);
+    else setAiError(r.message);
+    setAiLoading(false);
   };
 
   if (!note) return <div style={{ color: "var(--pro-text-muted)", padding: 40 }}>載入中...</div>;
@@ -123,6 +123,9 @@ export default function EditNotePage() {
         onChange={(k, v) => setSoap(prev => ({ ...prev, [k]: v }))}
         onAiAssist={handleAiAssist}
         aiLoading={aiLoading}
+        aiSuggestion={aiSuggestion}
+        aiError={aiError}
+        onDismissAi={() => setAiSuggestion("")}
       />
     </div>
   );
