@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { allowDemoAiCall, checkRateLimit } from "@/lib/rateLimit";
 import { requireProAal2 } from "@/lib/pro/serverAuth";
 
 const CLINICAL_SYSTEM_PROMPT = `You are a clinical decision support assistant for licensed physicians using ClinCalc Pro.
@@ -26,13 +26,23 @@ export async function POST(req: NextRequest) {
   if (!gate.ok) return gate.res;
   const userId = gate.ctx.id;
 
-  // 以已驗證的 user.id 限流（取代原本可偽造的 x-forwarded-for），30 req/min，持久化跨 isolate
-  if (!(await checkRateLimit(`gemini-clinical:${userId}`, 30, 60))) {
-    return NextResponse.json({ error: "RATE_LIMIT", message: "請求過於頻繁" }, { status: 429 });
+  // 以已驗證的 user.id 限流（取代原本可偽造的 x-forwarded-for），30 req/min，持久化跨 isolate。
+  // 展示帳號是所有訪客共用的，改用共用額度，免得陌生人把真正使用者的 Gemini 配額用光。
+  const isDemo = gate.ctx.isDemo;
+  const allowed = isDemo
+    ? await allowDemoAiCall()
+    : await checkRateLimit(`gemini-clinical:${userId}`, 30, 60);
+  if (!allowed) {
+    return NextResponse.json({
+      error: "RATE_LIMIT",
+      message: isDemo
+        ? "展示帳號的 AI 額度是所有訪客共用的，現在用完了，晚一點再試。"
+        : "一分鐘內最多問 AI 30 次，稍等一下再送出。",
+    }, { status: 429 });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "NO_API_KEY" }, { status: 503 });
+  if (!apiKey) return NextResponse.json({ error: "NO_API_KEY", message: "伺服器沒有設定 AI 金鑰" }, { status: 503 });
 
   let body: Record<string, unknown>;
   try {
@@ -75,8 +85,8 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[Pro Gemini Clinical]", msg);
     if (msg.includes("429") || msg.includes("quota")) {
-      return NextResponse.json({ error: "QUOTA_EXCEEDED", message: "API 配額已達上限" }, { status: 429 });
+      return NextResponse.json({ error: "QUOTA_EXCEEDED", message: "Gemini 今天的配額用完了，明天再試。" }, { status: 429 });
     }
-    return NextResponse.json({ error: "GEMINI_ERROR", message: "AI 處理失敗" }, { status: 500 });
+    return NextResponse.json({ error: "GEMINI_ERROR", message: "AI 這次沒有回應，等一下再試一次。" }, { status: 500 });
   }
 }

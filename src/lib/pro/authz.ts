@@ -12,6 +12,9 @@ export interface CallerContext {
   role: ProRole | null;
   isPro: boolean;
   aal: "aal1" | "aal2" | null;   // 目前 session 的 AAL（getAuthenticatorAssuranceLevel().currentLevel）
+  // 展示帳號（profiles.is_demo）。資料全是虛構的，但帳密公開寫在 README，
+  // 所以它可以用一般臨床功能，卻永遠不能拿到管理權。
+  isDemo: boolean;
 }
 
 // R3：目標帳號分類 — 不可再用 null 同時代表「普通帳號」與「查不到」。
@@ -38,8 +41,20 @@ export function checkPrivilegedCaller(c: CallerContext): Decision {
   if (!c.id) return deny(401, "unauthenticated");
   if (!c.isPro) return deny(403, "not_pro");
   if (!c.role || !PRIVILEGED_ROLES.includes(c.role)) return deny(403, "not_admin");
+  // 展示帳號就算被人綁了 MFA 拿到 aal2，也不能修改任何帳號或資料。
+  if (c.isDemo) return deny(403, "demo_account_read_only");
   if (c.aal !== "aal2") return deny(403, "aal2_required");
   return ALLOW;
+}
+
+/**
+ * 管理頁的「瀏覽」：真正的管理員照 checkPrivilegedCaller；
+ * 展示用的 admin 帳號也可以進來看，但 route 必須只回傳展示帳號、而且不給任何修改操作（demoView = true）。
+ */
+export function checkPrivilegedRead(c: CallerContext): Decision & { demoView: boolean } {
+  const isPrivilegedRole = !!c.role && PRIVILEGED_ROLES.includes(c.role);
+  if (c.id && c.isPro && c.isDemo && isPrivilegedRole) return { ...ALLOW, demoView: true };
+  return { ...checkPrivilegedCaller(c), demoView: false };
 }
 
 /**
@@ -82,6 +97,9 @@ export function authorizeAdminAction(
 export function checkProAal2(c: CallerContext): Decision {
   if (!c.id) return deny(401, "unauthenticated");
   if (!c.isPro) return deny(403, "not_pro");
+  // 展示帳號在資料庫層（migration 08）與頁面層都免 MFA；API 不一致的話，
+  // demo 能看到病人卻按不了藥物交互檢查。管理權另由 checkPrivilegedCaller 擋住。
+  if (c.isDemo) return ALLOW;
   if (c.aal !== "aal2") return deny(403, "aal2_required");
   return ALLOW;
 }

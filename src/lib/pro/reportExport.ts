@@ -3,6 +3,20 @@
 import type { PatientRecord } from "./patientUtils";
 import { calculateAge } from "./patientUtils";
 
+// 報告是用 document.write 寫進「同源」的新視窗，裡面的病人姓名、主訴、SOAP、AI 分析
+// 都是使用者輸入的內容。只要有一個欄位沒跳脫，寫進去的 <img onerror=...> 就能在主站執行。
+// 所以：所有插值一律經過 esc()；另外在報告的 <head> 放一條 CSP 禁止任何腳本，當第二道保險。
+function esc(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const NO_SCRIPT_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">`;
+
 export interface ClinicalReportData {
   patient: PatientRecord;
   visitDate: string;
@@ -23,18 +37,22 @@ export function generateClinicalReportHTML(report: ClinicalReportData): string {
 
   const objRows = Object.entries(report.objective || {})
     .filter(([, v]) => v !== "" && v !== null && v !== undefined)
-    .map(([k, v]) => `<tr><td>${k}</td><td><strong>${v}</strong></td></tr>`)
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td><strong>${esc(v)}</strong></td></tr>`)
     .join("");
 
   const icdBadges = (report.icd10Codes || [])
-    .map(c => `<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:4px;font-family:monospace;">${c}</span>`)
+    .map(c => `<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:4px;font-family:monospace;">${esc(c)}</span>`)
     .join("");
+
+  const allergies = (report.patient.allergies || []).map(esc).join(", ");
+  const chronic = (report.patient.chronic_conditions || []).map(esc).join(", ");
 
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>臨床報告 - ${report.patient.full_name}</title>
+${NO_SCRIPT_CSP}
+<title>臨床報告 - ${esc(report.patient.full_name)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Noto Sans TC', Arial, sans-serif; font-size: 13px; color: #1e293b; background: #fff; padding: 0; }
@@ -67,32 +85,32 @@ export function generateClinicalReportHTML(report: ClinicalReportData): string {
     </div>
     <div style="text-align:right; font-size:12px; color:#64748b;">
       <div>就診日期 Visit Date</div>
-      <div style="font-weight:700; color:#1e293b;">${report.visitDate}</div>
+      <div style="font-weight:700; color:#1e293b;">${esc(report.visitDate)}</div>
     </div>
   </div>
 
   <div class="patient-card">
-    <div class="field"><label>姓名 Name</label><value>${report.patient.full_name}</value></div>
-    <div class="field"><label>年齡 Age</label><value>${age !== null ? `${age} 歲` : "—"}</value></div>
+    <div class="field"><label>姓名 Name</label><value>${esc(report.patient.full_name)}</value></div>
+    <div class="field"><label>年齡 Age</label><value>${age !== null ? `${esc(age)} 歲` : "—"}</value></div>
     <div class="field"><label>性別 Sex</label><value>${sex}</value></div>
-    <div class="field"><label>血型 Blood Type</label><value>${report.patient.blood_type || "—"}</value></div>
-    ${report.patient.allergies?.length ? `<div class="field" style="grid-column:span 2"><label>過敏 Allergies</label><value style="color:#dc2626">${report.patient.allergies.join(", ")}</value></div>` : ""}
-    ${report.patient.chronic_conditions?.length ? `<div class="field" style="grid-column:span 2"><label>慢性病 Chronic Conditions</label><value>${report.patient.chronic_conditions.join(", ")}</value></div>` : ""}
+    <div class="field"><label>血型 Blood Type</label><value>${esc(report.patient.blood_type || "—")}</value></div>
+    ${allergies ? `<div class="field" style="grid-column:span 2"><label>過敏 Allergies</label><value style="color:#dc2626">${allergies}</value></div>` : ""}
+    ${chronic ? `<div class="field" style="grid-column:span 2"><label>慢性病 Chronic Conditions</label><value>${chronic}</value></div>` : ""}
   </div>
 
-  ${report.chiefComplaint ? `<div class="section"><h3>主訴 Chief Complaint</h3><p>${report.chiefComplaint}</p></div>` : ""}
+  ${report.chiefComplaint ? `<div class="section"><h3>主訴 Chief Complaint</h3><p>${esc(report.chiefComplaint)}</p></div>` : ""}
 
-  ${report.subjective ? `<div class="section"><h3>主觀病史 Subjective (S)</h3><p>${report.subjective}</p></div>` : ""}
+  ${report.subjective ? `<div class="section"><h3>主觀病史 Subjective (S)</h3><p>${esc(report.subjective)}</p></div>` : ""}
 
   ${objRows ? `<div class="section"><h3>客觀數據 Objective (O)</h3><table class="obj-table">${objRows}</table></div>` : ""}
 
-  ${report.assessment ? `<div class="section"><h3>評估 Assessment (A)</h3><p>${report.assessment}</p></div>` : ""}
+  ${report.assessment ? `<div class="section"><h3>評估 Assessment (A)</h3><p>${esc(report.assessment)}</p></div>` : ""}
 
   ${icdBadges ? `<div class="section"><h3>ICD-10 診斷碼</h3><div style="padding:4px 0">${icdBadges}</div></div>` : ""}
 
-  ${report.plan ? `<div class="section"><h3>治療計畫 Plan (P)</h3><p>${report.plan}</p></div>` : ""}
+  ${report.plan ? `<div class="section"><h3>治療計畫 Plan (P)</h3><p>${esc(report.plan)}</p></div>` : ""}
 
-  ${report.aiAnalysis ? `<div class="section"><h3>AI 臨床輔助分析</h3><div class="ai-box">${report.aiAnalysis}</div></div>` : ""}
+  ${report.aiAnalysis ? `<div class="section"><h3>AI 臨床輔助分析</h3><div class="ai-box">${esc(report.aiAnalysis)}</div></div>` : ""}
 
   <div class="footer">
     <div>
@@ -100,8 +118,8 @@ export function generateClinicalReportHTML(report: ClinicalReportData): string {
       <p>This report is generated by ClinCalc Pro for physician reference only.</p>
     </div>
     <div class="stamp">
-      <p>${report.doctorName || "主治醫師"}</p>
-      ${report.institution ? `<p style="font-weight:400;color:#64748b;font-size:11px;">${report.institution}</p>` : ""}
+      <p>${esc(report.doctorName || "主治醫師")}</p>
+      ${report.institution ? `<p style="font-weight:400;color:#64748b;font-size:11px;">${esc(report.institution)}</p>` : ""}
       <p style="font-weight:400;color:#94a3b8;font-size:11px;">列印日期：${new Date().toLocaleDateString("zh-TW")}</p>
     </div>
   </div>
@@ -129,17 +147,18 @@ export function generatePrescriptionHTML(opts: {
 }): string {
   const rows = opts.items.map(item => `
     <tr>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;">${item.label}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${item.days} 天</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:600;">${item.totalQty || "—"}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">${item.note || ""}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;">${esc(item.label)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${esc(item.days)} 天</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;font-weight:600;">${esc(item.totalQty || "—")}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#64748b;">${esc(item.note || "")}</td>
     </tr>`).join("");
 
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>藥單 - ${opts.patientName}</title>
+${NO_SCRIPT_CSP}
+<title>藥單 - ${esc(opts.patientName)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Noto Sans TC', Arial, sans-serif; font-size: 13px; color: #1e293b; background: #fff; }
@@ -164,16 +183,16 @@ export function generatePrescriptionHTML(opts: {
 <div class="page">
   <div class="header">
     <div>
-      <div class="clinic-name">${opts.institution || "ClinCalc Pro"}</div>
+      <div class="clinic-name">${esc(opts.institution || "ClinCalc Pro")}</div>
       <div class="clinic-sub">門診藥單 Outpatient Prescription</div>
     </div>
     <div class="rx-title">Rx</div>
   </div>
 
   <div class="patient-row">
-    <div><span>病患</span><strong>${opts.patientName}</strong></div>
-    ${opts.patientDob ? `<div><span>出生日期</span><strong>${opts.patientDob}</strong></div>` : ""}
-    <div><span>就診日期</span><strong>${opts.visitDate}</strong></div>
+    <div><span>病患</span><strong>${esc(opts.patientName)}</strong></div>
+    ${opts.patientDob ? `<div><span>出生日期</span><strong>${esc(opts.patientDob)}</strong></div>` : ""}
+    <div><span>就診日期</span><strong>${esc(opts.visitDate)}</strong></div>
     <div><span>列印日期</span><strong>${new Date().toLocaleDateString("zh-TW")}</strong></div>
   </div>
 
@@ -191,7 +210,7 @@ export function generatePrescriptionHTML(opts: {
 
   <div class="footer-grid">
     <div class="sign-box">病患簽名 Patient Signature</div>
-    <div class="sign-box">${opts.doctorName || "醫師簽名 Physician Signature"}</div>
+    <div class="sign-box">${esc(opts.doctorName || "醫師簽名 Physician Signature")}</div>
   </div>
 
   <div class="disclaimer">
@@ -205,7 +224,7 @@ export function generatePrescriptionHTML(opts: {
 export function printReport(html: string) {
   const win = window.open("", "_blank");
   if (!win) {
-    alert("請允許彈出視窗以列印報告");
+    alert("瀏覽器擋下了列印視窗。請在網址列右側允許這個網站開啟彈出視窗，再按一次列印。");
     return;
   }
   win.document.write(html);

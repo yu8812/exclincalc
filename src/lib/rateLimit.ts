@@ -2,7 +2,7 @@
 // 取代原本各 route 的 in-memory Map — 那在 serverless edge 上每個 isolate 獨立、
 // 隨時重置、不共享，等於無效。此處透過共用 Postgres 的原子 RPC 計數。
 //
-// 需先在 Supabase 執行 supabase/rate_limits.sql（建表 + check_rate_limit 函式）。
+// 資料表與函式由 supabase/migrations/20261003_12_rate_limits.sql 建立（只開放 service role 呼叫）。
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -43,4 +43,14 @@ export async function checkRateLimit(
     return true;
   }
   return data === true;
+}
+
+/**
+ * 展示帳號的帳密公開在 README，所有訪客共用同一份 AI 額度：每分鐘 10 次、每天 100 次。
+ * 用完只會擋住展示帳號，不會吃掉真正使用者的 Gemini 配額。
+ * 先檢查每分鐘的桶，被擋下的請求就不會再扣到每天的額度。
+ */
+export async function allowDemoAiCall(): Promise<boolean> {
+  if (!(await checkRateLimit("ai-demo:minute", 10, 60))) return false;
+  return checkRateLimit("ai-demo:day", 100, 24 * 60 * 60);
 }

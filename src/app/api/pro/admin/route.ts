@@ -12,16 +12,13 @@ async function getAdminClient() {
   return createClient(url, key);
 }
 
-// RR8：admin data CRUD 需 admin/super_admin + is_pro + AAL2（共用 server 守衛）。
-async function verifyAdmin() {
-  const gate = await requirePrivileged();
-  return gate.ok ? gate.ctx : null;
-}
+// RR8：admin data CRUD 需 admin/super_admin + is_pro + AAL2，展示帳號一律不行（共用 server 守衛）。
+// 被拒時直接回守衛的回應，裡面有 reason，前端才能告訴使用者為什麼。
 
 // POST: insert new row (or upsert if upsert: true)
 export async function POST(req: NextRequest) {
-  const auth = await verifyAdmin();
-  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  const gate = await requirePrivileged();
+  if (!gate.ok) return gate.res;
 
   let body: { table: string; row: Record<string, unknown>; upsert?: boolean };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }
@@ -50,8 +47,8 @@ export async function POST(req: NextRequest) {
 
 // PUT: update existing row by id
 export async function PUT(req: NextRequest) {
-  const auth = await verifyAdmin();
-  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  const gate = await requirePrivileged();
+  if (!gate.ok) return gate.res;
 
   let body: { table: string; row: Record<string, unknown> };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }
@@ -74,8 +71,8 @@ export async function PUT(req: NextRequest) {
 
 // DELETE: delete row by id
 export async function DELETE(req: NextRequest) {
-  const auth = await verifyAdmin();
-  if (!auth) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  const gate = await requirePrivileged();
+  if (!gate.ok) return gate.res;
 
   let body: { table: string; id: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "INVALID_JSON" }, { status: 400 }); }

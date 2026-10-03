@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requirePrivileged } from "@/lib/pro/serverAuth";
+import { requirePrivileged, requirePrivilegedRead } from "@/lib/pro/serverAuth";
 import {
   authorizeAdminAction, canAssignRole,
-  type CallerContext, type TargetClass, type AdminAction,
+  type CallerContext, type TargetClass, type AdminAction, type ProRole,
 } from "@/lib/pro/authz";
 
 const MIN_PASSWORD_LENGTH = 8;
+const VALID_ROLES: ProRole[] = ["doctor", "nurse", "pharmacist", "admin_staff", "admin", "super_admin"];
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -62,16 +63,20 @@ async function writeAuditLog(params: {
 
 // GET — list all users with stats
 export async function GET() {
-  const gate = await requirePrivileged();
+  const gate = await requirePrivilegedRead();
   if (!gate.ok) return gate.res;
   const caller = gate.ctx;
 
   const admin = getAdminClient();
-  const { data: { users }, error } = await admin.auth.admin.listUsers({ perPage: 200 });
+  const { data: { users: allUsers }, error } = await admin.auth.admin.listUsers({ perPage: 200 });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const { data: profiles } = await admin.from("profiles")
-    .select("id, is_pro, pro_role, institution, license_number");
+    .select("id, is_pro, pro_role, institution, license_number, is_demo");
+
+  // 展示用 admin 的密碼是公開的：只讓它看到其他展示帳號，真實使用者的 email 一個都不給。
+  const demoIds = new Set((profiles || []).filter((p) => p.is_demo).map((p) => p.id));
+  const users = gate.demoView ? allUsers.filter((u) => demoIds.has(u.id)) : allUsers;
 
   const countBy = async (table: string) => {
     const { data } = await admin.from(table).select("doctor_id");
@@ -98,7 +103,9 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ users: result, currentUserId: caller.id, currentRole: caller.role });
+  return NextResponse.json({
+    users: result, currentUserId: caller.id, currentRole: caller.role, readOnly: gate.demoView,
+  });
 }
 
 // 共用：解析 body、分類 target、跑授權決策
@@ -167,6 +174,17 @@ export async function PATCH(req: NextRequest) {
 
   const { userId, updates } = await req.json();
   if (!userId || !updates) return NextResponse.json({ error: "缺少 userId 或 updates" }, { status: 400 });
+  // service role 不受欄位權限限制，所以型別與值域只能在這裡把關
+  if ("pro_role" in updates && !VALID_ROLES.includes(updates.pro_role)) {
+    return NextResponse.json({ error: "不認得這個角色", reason: "invalid_role" }, { status: 400 });
+  }
+  if ("is_pro" in updates && typeof updates.is_pro !== "boolean") {
+    return NextResponse.json({ error: "is_pro 必須是 true 或 false", reason: "invalid_is_pro" }, { status: 400 });
+  }
+  if ("institution" in updates && updates.institution !== null
+      && (typeof updates.institution !== "string" || updates.institution.length > 100)) {
+    return NextResponse.json({ error: "機構名稱格式不對（最多 100 字）", reason: "invalid_institution" }, { status: 400 });
+  }
   const admin = getAdminClient();
 
   const changingRole = "pro_role" in updates;
